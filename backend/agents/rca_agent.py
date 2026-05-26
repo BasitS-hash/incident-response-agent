@@ -16,7 +16,9 @@ SYSTEM_PROMPT = """You are a senior SRE performing root cause analysis. You will
 - Recent deployment history
 
 Identify the root cause and recommend a fix.
-Respond in JSON with keys: root_cause, rca_summary, log_evidence (list of key log lines), recommended_fix."""
+Respond ONLY with a flat JSON object. All values must be plain strings or a list of strings.
+Do NOT use nested objects or arrays of objects.
+Keys: root_cause (string), rca_summary (string), log_evidence (list of strings), recommended_fix (string)."""
 
 
 def run_rca(state: dict) -> dict:
