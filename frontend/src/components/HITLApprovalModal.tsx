@@ -47,6 +47,7 @@ export default function HITLApprovalModal({
         background: "#1f2937", border: "1px solid #374151", borderRadius: "12px",
         padding: "20px", maxWidth: "520px", width: "100%", color: "white",
         maxHeight: "90vh", display: "flex", flexDirection: "column",
+        overflow: "hidden",
       }}>
         {/* Header — fixed */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px", flexShrink: 0 }}>
@@ -102,19 +103,21 @@ export default function HITLApprovalModal({
   );
 }
 
-const MAX_CHARS = 320;
-
 function Section({ label, value }: { label: string; value: unknown }) {
-  const raw = value && typeof value === "object"
+  const display = value && typeof value === "object"
     ? JSON.stringify(value)
     : String(value || "—");
-  const display = raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) + "…" : raw;
   return (
     <div style={{ marginBottom: "12px" }}>
       <div style={{ fontSize: "10px", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "3px" }}>
         {label}
       </div>
-      <div style={{ background: "#111827", padding: "8px 12px", borderRadius: "6px", fontSize: "13px", lineHeight: 1.5, color: "#d1d5db" }}>
+      <div style={{
+        background: "#111827", padding: "8px 12px", borderRadius: "6px",
+        fontSize: "13px", lineHeight: 1.5, color: "#d1d5db",
+        maxHeight: "96px", overflowY: "auto",
+        scrollbarWidth: "thin", scrollbarColor: "#374151 transparent",
+      }}>
         {display}
       </div>
     </div>
