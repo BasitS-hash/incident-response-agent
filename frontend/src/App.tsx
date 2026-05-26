@@ -9,30 +9,21 @@ export default function App() {
   const [sessionKey,   setSessionKey]   = useState(0);
   const [runId,        setRunId]        = useState<string | null>(null);
   const [approvalDone, setApprovalDone] = useState(false);
-  const [wasApproved,  setWasApproved]  = useState<boolean | null>(null);
 
   const { state, events, awaitingApproval, approvalData, finished, streamError } =
     useAgentStream(runId);
 
   function handleApprovalDone(approved: boolean) {
-    setApprovalDone(true);
-    setWasApproved(approved);
+    setApprovalDone(approved);
   }
 
   function handleReset() {
     setRunId(null);
     setApprovalDone(false);
-    setWasApproved(null);
     setSessionKey((k) => k + 1);
   }
 
   const isLoading = !!runId && !state.incident_id;
-
-  // After approval the SSE stream is closed, so state never updates.
-  // Patch it manually so the stepper and details reflect the real outcome.
-  const effectiveState = wasApproved === true
-    ? { ...state, approved: true, email_sent: true }
-    : state;
 
   return (
     <div style={{
@@ -96,7 +87,7 @@ export default function App() {
         {/* ── Workflow stepper ───────────────────────────── */}
         {runId && (
           <WorkflowStepper
-            state={effectiveState}
+            state={state}
             awaitingApproval={awaitingApproval && !approvalDone}
           />
         )}
@@ -157,7 +148,7 @@ export default function App() {
             </p>
 
             {runId ? (
-              <IncidentDetails state={effectiveState} loading={isLoading} />
+              <IncidentDetails state={state} loading={isLoading} />
             ) : (
               <div style={{
                 flex: 1,

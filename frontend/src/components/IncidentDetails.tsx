@@ -76,7 +76,7 @@ export default function IncidentDetails({ state, loading }: Props) {
         <tbody>
           {FIELDS.map(({ label, key }) => {
             const val = state[key];
-            if (val === undefined || val === null || val === "" || val === false) return null;
+            if (val === undefined || val === null || val === "") return null;
 
             const displayRaw = Array.isArray(val) ? val.join(", ") : String(val);
             const display =

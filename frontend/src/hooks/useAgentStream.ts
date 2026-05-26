@@ -18,16 +18,7 @@ export function useAgentStream(run_id: string | null) {
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!run_id) {
-      // Clear everything when the run is reset so stale modal state doesn't leak
-      setEvents([]);
-      setState({});
-      setAwaitingApproval(false);
-      setApprovalData(null);
-      setFinished(false);
-      setStreamError(null);
-      return;
-    }
+    if (!run_id) return;
 
     // Reset all state for the new run
     setEvents([]);
