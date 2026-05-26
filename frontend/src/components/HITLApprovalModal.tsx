@@ -41,68 +41,80 @@ export default function HITLApprovalModal({
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
+      padding: "16px",
     }}>
       <div style={{
         background: "#1f2937", border: "1px solid #374151", borderRadius: "12px",
-        padding: "32px", maxWidth: "600px", width: "90%", color: "white",
+        padding: "20px", maxWidth: "520px", width: "100%", color: "white",
+        maxHeight: "90vh", display: "flex", flexDirection: "column",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-          <h2 style={{ margin: 0 }}>Human Review Required</h2>
+        {/* Header — fixed */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px", flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: "16px" }}>Human Review Required</h2>
           <span style={{
             background: severityColor[severity] ?? "#6b7280",
-            padding: "2px 10px", borderRadius: "9999px", fontSize: "13px", fontWeight: 700,
+            padding: "2px 8px", borderRadius: "9999px", fontSize: "12px", fontWeight: 700,
           }}>{severity}</span>
         </div>
 
-        <Section label="Root Cause"     value={root_cause}     />
-        <Section label="RCA Summary"    value={rca_summary}    />
-        <Section label="Recommended Fix" value={recommended_fix} />
+        {/* Scrollable content */}
+        <div style={{ overflowY: "auto", flex: 1, marginBottom: "12px", paddingRight: "4px" }}>
+          <Section label="Root Cause"      value={root_cause}      />
+          <Section label="RCA Summary"     value={rca_summary}     />
+          <Section label="Recommended Fix" value={recommended_fix} />
+        </div>
 
-        <input
-          placeholder="Your name (approver)"
-          value={approver}
-          onChange={(e) => setApprover(e.target.value)}
-          style={inputStyle}
-        />
-        <textarea
-          placeholder="Optional notes..."
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          style={{ ...inputStyle, resize: "vertical" }}
-        />
+        {/* Footer inputs + buttons — fixed */}
+        <div style={{ flexShrink: 0 }}>
+          <input
+            placeholder="Your name (approver)"
+            value={approver}
+            onChange={(e) => setApprover(e.target.value)}
+            style={inputStyle}
+          />
+          <textarea
+            placeholder="Optional notes..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            style={{ ...inputStyle, resize: "none" }}
+          />
 
-        <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-          <button
-            onClick={() => handleDecision(true)}
-            disabled={loading}
-            style={btnStyle("#22c55e")}
-          >
-            {loading ? "Submitting..." : "Approve & Send Notification"}
-          </button>
-          <button
-            onClick={() => handleDecision(false)}
-            disabled={loading}
-            style={btnStyle("#ef4444")}
-          >
-            Reject — Re-run RCA
-          </button>
+          <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+            <button
+              onClick={() => handleDecision(true)}
+              disabled={loading}
+              style={btnStyle("#22c55e")}
+            >
+              {loading ? "Submitting..." : "✓ Approve"}
+            </button>
+            <button
+              onClick={() => handleDecision(false)}
+              disabled={loading}
+              style={btnStyle("#ef4444")}
+            >
+              ✕ Reject
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+const MAX_CHARS = 320;
+
 function Section({ label, value }: { label: string; value: unknown }) {
-  const display = value && typeof value === "object"
+  const raw = value && typeof value === "object"
     ? JSON.stringify(value)
     : String(value || "—");
+  const display = raw.length > MAX_CHARS ? raw.slice(0, MAX_CHARS) + "…" : raw;
   return (
-    <div style={{ marginBottom: "16px" }}>
-      <div style={{ fontSize: "11px", color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>
+    <div style={{ marginBottom: "12px" }}>
+      <div style={{ fontSize: "10px", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "3px" }}>
         {label}
       </div>
-      <div style={{ background: "#111827", padding: "10px 14px", borderRadius: "6px", fontSize: "14px", lineHeight: 1.6 }}>
+      <div style={{ background: "#111827", padding: "8px 12px", borderRadius: "6px", fontSize: "13px", lineHeight: 1.5, color: "#d1d5db" }}>
         {display}
       </div>
     </div>
