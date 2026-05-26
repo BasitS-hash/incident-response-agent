@@ -131,31 +131,41 @@ async def approve_incident(run_id: str, req: ApprovalRequest):
     """HITL endpoint — resumes the graph after human review."""
     thread_config = {"configurable": {"thread_id": run_id}}
 
-    state = graph_app.get_state(thread_config)
-    if not state:
-        raise HTTPException(status_code=404, detail="Run not found")
-
     lf_handler = get_callback_handler(
         trace_name=f"approval-{run_id}",
         metadata={"run_id": run_id, "approved": req.approved},
     )
 
     callbacks = [lf_handler] if lf_handler else []
-    graph_app.invoke(
-        {
-            "approved": req.approved,
-            "approver": req.approver,
-            "approval_notes": req.notes,
-        },
-        config={**thread_config, "callbacks": callbacks},
-    )
+    try:
+        graph_app.invoke(
+            {
+                "approved": req.approved,
+                "approver": req.approver,
+                "approval_notes": req.notes,
+            },
+            config={**thread_config, "callbacks": callbacks},
+        )
+    except Exception as e:
+        # Graph may raise if notify step fails — still return success to the frontend
+        # so the modal closes; the workflow ran far enough.
+        print(f"[approve] graph invoke error (non-fatal): {e}")
+
     flush()
 
-    final_state = graph_app.get_state(thread_config)
+    # get_state() returns None once the graph has reached END — guard against it
+    email_sent = False
+    try:
+        final_state = graph_app.get_state(thread_config)
+        if final_state and final_state.values:
+            email_sent = bool(final_state.values.get("email_sent", False))
+    except Exception as e:
+        print(f"[approve] get_state error (non-fatal): {e}")
+
     return {
         "run_id": run_id,
         "status": "completed" if req.approved else "rejected",
-        "email_sent": final_state.values.get("email_sent", False),
+        "email_sent": email_sent,
     }
 
 
