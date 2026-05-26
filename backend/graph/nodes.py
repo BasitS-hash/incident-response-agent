@@ -32,9 +32,7 @@ def notify_node(state: IncidentState) -> dict:
 
 
 def route_after_triage(state: IncidentState) -> str:
-    """P1 incidents skip RCA and go straight to notify for speed."""
-    if state.get("severity") == "P1":
-        return "approval"
+    """All incidents go through RCA — human approval always needs a root cause."""
     return "rca"
 
 
