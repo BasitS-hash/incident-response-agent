@@ -3,9 +3,8 @@ import os
 
 load_dotenv()
 
-# LLM provider: "anthropic" or "openai"
+# LLM provider: "gemini" (default) or "openai"
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
