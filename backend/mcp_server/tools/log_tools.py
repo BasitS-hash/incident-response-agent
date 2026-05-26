@@ -1,19 +1,28 @@
 """Mock log and metrics tools — replace with real log aggregator (Splunk, Loki, etc.)."""
 
+# ── Per-service mock data ────────────────────────────────────────────────────
 
-def query_system_logs(service: str, minutes: int = 30) -> list[str]:
-    return [
-        f"[ERROR] {service}: connection timeout after 30s (x47 in last {minutes}m)",
-        f"[ERROR] {service}: upstream connect error or disconnect/reset before headers",
-        f"[WARN]  {service}: connection pool utilization at 98%",
-        f"[ERROR] {service}: FATAL: remaining connection slots reserved for non-replication superuser",
-        f"[INFO]  {service}: health check failed — pod restarting",
-    ]
+_LOG_DATA: dict[str, list[str]] = {
+    "auth": [
+        "[ERROR] auth-service: 503 Service Unavailable returned to client (x312 in last 30m)",
+        "[ERROR] auth-service: upstream connect error — connection refused from token-validator",
+        "[WARN]  auth-service: JWT validation latency p99=4200ms (threshold: 500ms)",
+        "[ERROR] auth-service: Redis session cache MISS rate 97% — fallback to DB overwhelmed",
+        "[ERROR] auth-service: pod CrashLoopBackOff — OOMKilled (limit: 512Mi, used: 509Mi)",
+        "[INFO]  auth-service: horizontal pod autoscaler at max replicas (10/10)",
+    ],
+    "payment": [
+        "[ERROR] payment-service: pq: sorry, too many clients already (connection 501/500)",
+        "[ERROR] payment-service: context deadline exceeded — DB query timeout after 30s (x89 in last 30m)",
+        "[ERROR] payment-service: checkout transaction rolled back — unable to acquire DB lock",
+        "[WARN]  payment-service: connection pool exhausted — requests queuing (queue depth: 214)",
+        "[ERROR] payment-service: FATAL: remaining connection slots reserved for superuser",
+        "[INFO]  payment-service: pgBouncer pool_mode=session — all sessions occupied",
+    ],
+}
 
-
-def get_system_metrics(service: str) -> dict:
-    return {
-        "service": service,
+_METRICS_DATA: dict[str, dict] = {
+    "auth": {
         "cpu_percent": 87,
         "memory_percent": 91,
         "active_connections": 498,
@@ -21,21 +30,99 @@ def get_system_metrics(service: str) -> dict:
         "error_rate_percent": 34.2,
         "p99_latency_ms": 4800,
         "pod_restarts_last_hour": 6,
+        "cache_hit_rate_percent": 3,
+    },
+    "payment": {
+        "cpu_percent": 42,
+        "memory_percent": 61,
+        "active_db_connections": 501,
+        "max_db_connections": 500,
+        "error_rate_percent": 78.5,
+        "p99_latency_ms": 31200,
+        "transactions_failed_last_30m": 1847,
+        "pgbouncer_wait_queue_depth": 214,
+    },
+}
+
+_DEPLOYMENT_DATA: dict[str, list[dict]] = {
+    "auth": [
+        {
+            "deployed_at": "2026-05-26T08:10:00Z",
+            "version": "v3.1.2",
+            "changed_by": "ci-pipeline",
+            "change": "Reduced Redis connection pool size from 100 to 20 to cut costs",
+        },
+        {
+            "deployed_at": "2026-05-25T14:00:00Z",
+            "version": "v3.1.1",
+            "changed_by": "alice.chen",
+            "change": "Added new OAuth2 provider integration",
+        },
+    ],
+    "payment": [
+        {
+            "deployed_at": "2026-05-26T07:45:00Z",
+            "version": "v5.0.0",
+            "changed_by": "bob.jones",
+            "change": "Migrated ORM from SQLAlchemy to async Tortoise-ORM — connection pool config not ported",
+        },
+        {
+            "deployed_at": "2026-05-25T18:30:00Z",
+            "version": "v4.9.8",
+            "changed_by": "ci-pipeline",
+            "change": "Increased checkout worker threads from 20 to 80",
+        },
+    ],
+}
+
+_DEFAULT_LOGS = [
+    "[ERROR] {service}: connection timeout after 30s",
+    "[ERROR] {service}: upstream connect error or disconnect/reset before headers",
+    "[WARN]  {service}: connection pool utilization at 98%",
+    "[ERROR] {service}: health check failed — pod restarting",
+]
+
+_DEFAULT_METRICS = {
+    "cpu_percent": 75,
+    "memory_percent": 80,
+    "error_rate_percent": 25.0,
+    "p99_latency_ms": 3000,
+    "pod_restarts_last_hour": 3,
+}
+
+_DEFAULT_DEPLOYMENTS = [
+    {
+        "deployed_at": "2026-05-26T06:00:00Z",
+        "version": "v1.0.1",
+        "changed_by": "ci-pipeline",
+        "change": "Dependency updates",
     }
+]
+
+
+def _service_key(service: str) -> str:
+    s = service.lower()
+    if "auth" in s:
+        return "auth"
+    if "payment" in s or "checkout" in s:
+        return "payment"
+    return ""
+
+
+def query_system_logs(service: str, minutes: int = 30) -> list[str]:
+    key = _service_key(service)
+    if key:
+        return _LOG_DATA[key]
+    return [line.format(service=service) for line in _DEFAULT_LOGS]
+
+
+def get_system_metrics(service: str) -> dict:
+    key = _service_key(service)
+    data = _METRICS_DATA.get(key, _DEFAULT_METRICS).copy()
+    data["service"] = service
+    return data
 
 
 def get_deployment_history(service: str) -> list[dict]:
-    return [
-        {
-            "deployed_at": "2025-05-22T13:55:00Z",
-            "version": "v2.4.1",
-            "changed_by": "ci-pipeline",
-            "change": "Increased default thread pool size from 50 to 200",
-        },
-        {
-            "deployed_at": "2025-05-22T10:00:00Z",
-            "version": "v2.4.0",
-            "changed_by": "john.smith",
-            "change": "Updated ORM connection settings",
-        },
-    ]
+    key = _service_key(service)
+    return _DEPLOYMENT_DATA.get(key, _DEFAULT_DEPLOYMENTS)
