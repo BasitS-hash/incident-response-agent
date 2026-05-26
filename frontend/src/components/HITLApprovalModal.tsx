@@ -18,7 +18,7 @@ export default function HITLApprovalModal({
   const [loading,  setLoading]  = useState(false);
 
   async function handleDecision(approved: boolean) {
-    if (!approver.trim()) {
+    if (approved && !approver.trim()) {
       alert("Please enter your name before approving.");
       return;
     }

@@ -13,8 +13,8 @@ export default function App() {
   const { state, events, awaitingApproval, approvalData, finished, streamError } =
     useAgentStream(runId);
 
-  function handleApprovalDone(approved: boolean) {
-    setApprovalDone(approved);
+  function handleApprovalDone(_approved: boolean) {
+    setApprovalDone(true); // always close the modal — approve or reject
   }
 
   function handleReset() {
