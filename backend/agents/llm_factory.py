@@ -13,7 +13,7 @@ def get_llm(temperature: float = 0):
     # Default: Google Gemini
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         google_api_key=GEMINI_API_KEY,
         temperature=temperature,
     )

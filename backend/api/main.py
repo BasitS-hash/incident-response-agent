@@ -14,7 +14,7 @@ api = FastAPI(title="Incident Response Agent API")
 
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176", "http://localhost:5177"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,9 +73,10 @@ async def start_incident(req: IncidentRequest):
         metadata={"incident_id": req.incident_id, "run_id": run_id},
     )
 
+    callbacks = [lf_handler] if lf_handler else []
     graph_app.invoke(
         initial_state,
-        config={**thread_config, "callbacks": [lf_handler]},
+        config={**thread_config, "callbacks": callbacks},
     )
     flush()
 
@@ -139,13 +140,14 @@ async def approve_incident(run_id: str, req: ApprovalRequest):
         metadata={"run_id": run_id, "approved": req.approved},
     )
 
+    callbacks = [lf_handler] if lf_handler else []
     graph_app.invoke(
         {
             "approved": req.approved,
             "approver": req.approver,
             "approval_notes": req.notes,
         },
-        config={**thread_config, "callbacks": [lf_handler]},
+        config={**thread_config, "callbacks": callbacks},
     )
     flush()
 

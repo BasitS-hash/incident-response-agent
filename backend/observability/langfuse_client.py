@@ -1,29 +1,39 @@
 """Langfuse observability — wraps all LLM calls with trace/span context."""
-from langfuse import Langfuse
-from langfuse.langchain import CallbackHandler
+import logging
 from backend.config import LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
 
-_langfuse = None
+logger = logging.getLogger(__name__)
 
 
-def get_langfuse() -> Langfuse:
-    global _langfuse
-    if _langfuse is None:
-        _langfuse = Langfuse(
+def get_callback_handler(trace_name: str, metadata: dict = None):
+    """Returns a LangChain callback handler that auto-traces all LLM calls.
+    Falls back gracefully if Langfuse is not configured."""
+    if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY:
+        logger.info("Langfuse not configured — skipping observability.")
+        return None
+    try:
+        from langfuse.langchain import CallbackHandler
+        return CallbackHandler(
             public_key=LANGFUSE_PUBLIC_KEY,
             secret_key=LANGFUSE_SECRET_KEY,
             host=LANGFUSE_HOST,
+            trace_name=trace_name,
         )
-    return _langfuse
-
-
-def get_callback_handler(trace_name: str, metadata: dict = None) -> CallbackHandler:
-    """Returns a LangChain callback handler that auto-traces all LLM calls."""
-    lf = get_langfuse()
-    trace = lf.trace(name=trace_name, metadata=metadata or {})
-    return CallbackHandler(trace_id=trace.id)
+    except Exception as e:
+        logger.warning(f"Langfuse callback handler failed: {e}")
+        return None
 
 
 def flush():
-    """Flush all pending traces to Langfuse — call at end of each workflow run."""
-    get_langfuse().flush()
+    """Flush all pending traces to Langfuse."""
+    if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY:
+        return
+    try:
+        from langfuse import Langfuse
+        Langfuse(
+            public_key=LANGFUSE_PUBLIC_KEY,
+            secret_key=LANGFUSE_SECRET_KEY,
+            host=LANGFUSE_HOST,
+        ).flush()
+    except Exception as e:
+        logger.warning(f"Langfuse flush failed: {e}")
