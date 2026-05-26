@@ -48,10 +48,20 @@ def run_rca(state: dict) -> dict:
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     parsed = json.loads(match.group()) if match else {}
 
+    def _str(val, fallback=""):
+        """Ensure LLM output is always a flat string, never a nested object."""
+        if val is None:
+            return fallback
+        if isinstance(val, dict):
+            return json.dumps(val)
+        if isinstance(val, list):
+            return "; ".join(str(v) for v in val)
+        return str(val)
+
     return {
-        "root_cause": parsed.get("root_cause", "Unable to determine"),
-        "rca_summary": parsed.get("rca_summary", raw),
+        "root_cause": _str(parsed.get("root_cause"), "Unable to determine"),
+        "rca_summary": _str(parsed.get("rca_summary"), raw),
         "log_evidence": parsed.get("log_evidence", logs[:3]),
-        "recommended_fix": parsed.get("recommended_fix", ""),
+        "recommended_fix": _str(parsed.get("recommended_fix")),
         "messages": [response],
     }

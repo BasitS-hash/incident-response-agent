@@ -93,14 +93,17 @@ export default function HITLApprovalModal({
   );
 }
 
-function Section({ label, value }: { label: string; value: string }) {
+function Section({ label, value }: { label: string; value: unknown }) {
+  const display = value && typeof value === "object"
+    ? JSON.stringify(value)
+    : String(value || "—");
   return (
     <div style={{ marginBottom: "16px" }}>
       <div style={{ fontSize: "11px", color: "#9ca3af", textTransform: "uppercase", marginBottom: "4px" }}>
         {label}
       </div>
       <div style={{ background: "#111827", padding: "10px 14px", borderRadius: "6px", fontSize: "14px", lineHeight: 1.6 }}>
-        {value || "—"}
+        {display}
       </div>
     </div>
   );
