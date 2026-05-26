@@ -21,6 +21,17 @@ _MOCK_INCIDENTS: dict[str, dict] = {
         "reporter": "john.smith@company.com",
         "priority": "Critical",
     },
+    "INC-312": {
+        "title": "Notification service bulk email delivery failure",
+        "description": (
+            "Transactional emails (password reset, order confirmations, alerts) have "
+            "stopped delivering since 11:40 UTC. SES bounce rate exceeded the account "
+            "threshold and AWS auto-suspended sending. 14,000+ emails are queued in the "
+            "dead-letter queue. Customer support ticket volume up 300%."
+        ),
+        "reporter": "priya.patel@company.com",
+        "priority": "High",
+    },
 }
 
 _DEFAULT_INCIDENT = {

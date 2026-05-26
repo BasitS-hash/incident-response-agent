@@ -19,6 +19,14 @@ _LOG_DATA: dict[str, list[str]] = {
         "[ERROR] payment-service: FATAL: remaining connection slots reserved for superuser",
         "[INFO]  payment-service: pgBouncer pool_mode=session — all sessions occupied",
     ],
+    "notification": [
+        "[ERROR] notification-service: AWS SES SendEmail failed — Account suspended: bounce rate 12.4% exceeds 10% threshold",
+        "[ERROR] notification-service: MessageRejected — Email address is on suppression list (x2341 in last 30m)",
+        "[WARN]  notification-service: dead-letter queue depth 14,382 — consumer group falling behind",
+        "[ERROR] notification-service: SQS batch processor failed — all 10 workers returning SES throttle errors",
+        "[ERROR] notification-service: password-reset emails undelivered — queue TTL expiring for 890 messages",
+        "[INFO]  notification-service: last successful SES send at 11:39 UTC — 6 minutes of full outage",
+    ],
 }
 
 _METRICS_DATA: dict[str, dict] = {
@@ -41,6 +49,17 @@ _METRICS_DATA: dict[str, dict] = {
         "p99_latency_ms": 31200,
         "transactions_failed_last_30m": 1847,
         "pgbouncer_wait_queue_depth": 214,
+    },
+    "notification": {
+        "cpu_percent": 18,
+        "memory_percent": 34,
+        "ses_bounce_rate_percent": 12.4,
+        "ses_complaint_rate_percent": 0.6,
+        "dlq_depth": 14382,
+        "emails_sent_last_30m": 0,
+        "emails_failed_last_30m": 2341,
+        "worker_threads_active": 0,
+        "queue_consumer_lag_seconds": 1840,
     },
 }
 
@@ -71,6 +90,20 @@ _DEPLOYMENT_DATA: dict[str, list[dict]] = {
             "version": "v4.9.8",
             "changed_by": "ci-pipeline",
             "change": "Increased checkout worker threads from 20 to 80",
+        },
+    ],
+    "notification": [
+        {
+            "deployed_at": "2026-05-26T11:30:00Z",
+            "version": "v2.4.0",
+            "changed_by": "priya.patel",
+            "change": "Switched marketing email template engine — accidentally applied new unsubscribe logic to transactional emails, causing mass bounce classification",
+        },
+        {
+            "deployed_at": "2026-05-25T16:00:00Z",
+            "version": "v2.3.9",
+            "changed_by": "ci-pipeline",
+            "change": "Bumped SES SDK from v2 to v3 — default retry config changed",
         },
     ],
 }
@@ -106,6 +139,8 @@ def _service_key(service: str) -> str:
         return "auth"
     if "payment" in s or "checkout" in s:
         return "payment"
+    if "notif" in s or "email" in s or "ses" in s:
+        return "notification"
     return ""
 
 
