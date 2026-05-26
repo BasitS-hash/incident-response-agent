@@ -18,7 +18,16 @@ export function useAgentStream(run_id: string | null) {
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!run_id) return;
+    if (!run_id) {
+      // Clear stale approval state so the modal doesn't reappear on reset
+      setEvents([]);
+      setState({});
+      setAwaitingApproval(false);
+      setApprovalData(null);
+      setFinished(false);
+      setStreamError(null);
+      return;
+    }
 
     // Reset all state for the new run
     setEvents([]);
