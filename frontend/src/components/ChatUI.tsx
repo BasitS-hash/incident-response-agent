@@ -79,6 +79,7 @@ export default function ChatUI({ onRunStarted, events, finished, onReset }: Prop
       if (msg) newMessages.push({ role: "agent", content: msg });
     }
     if (newMessages.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages((prev) => [...prev, ...newMessages]);
     }
   }, [events]);

@@ -20,6 +20,7 @@ export function useAgentStream(run_id: string | null) {
   useEffect(() => {
     if (!run_id) {
       // Clear stale approval state so the modal doesn't reappear on reset
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEvents([]);
       setState({});
       setAwaitingApproval(false);

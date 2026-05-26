@@ -7,7 +7,7 @@ interface Props {
   severity: string;
   root_cause: string;
   recommended_fix: string;
-  onDone: (approved: boolean) => void;
+  onDone: () => void;
 }
 
 export default function HITLApprovalModal({
@@ -25,7 +25,7 @@ export default function HITLApprovalModal({
     setLoading(true);
     try {
       await submitApproval(run_id, { approved, approver, notes });
-      onDone(approved);
+      onDone();
     } catch {
       alert("Approval submission failed. Please try again.");
     } finally {
