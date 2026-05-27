@@ -4,9 +4,16 @@ import axios from "axios";
 // API keys live only in backend/.env and are never exposed to the browser.
 const BASE_URL = "";
 
+// Optional API key — set VITE_API_KEY in frontend/.env.local to enable auth.
+// If blank the backend runs in dev mode (no key required).
+const API_KEY = import.meta.env.VITE_API_KEY ?? "";
+
 export const apiClient = axios.create({
   baseURL: BASE_URL,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+  },
 });
 
 export interface IncidentStartResponse {

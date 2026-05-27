@@ -1,24 +1,62 @@
 """FastAPI backend — exposes LangGraph workflow over HTTP with AG-UI SSE streaming."""
 import json
+import logging
+import re
 import uuid
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, EmailStr, field_validator
+from backend.config import API_KEY
 from backend.graph.workflow import app as graph_app
 from backend.memory.mem0_client import search_similar_incidents
 from backend.observability.langfuse_client import get_callback_handler, flush
+
+logger = logging.getLogger(__name__)
 
 api = FastAPI(title="Incident Response Agent API")
 
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176", "http://localhost:5177"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://localhost:5177",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
+
+
+# ── Security headers middleware ──────────────────────────────────────
+@api.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+# ── API key auth ─────────────────────────────────────────────────────
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(key: str = Security(_api_key_header)):
+    """Protect state-changing POST endpoints with an API key.
+    If API_KEY is not set in .env, auth is skipped (local dev mode)."""
+    if not API_KEY:
+        return  # dev mode — no key configured, allow all
+    if key != API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing API key.",
+        )
 
 
 # ── AG-UI event helpers ──────────────────────────────────────────────
@@ -27,10 +65,32 @@ def sse_event(event_type: str, data: dict) -> str:
     return f"data: {payload}\n\n"
 
 
+# ── Safe state keys sent to the frontend ────────────────────────────
+_SAFE_STATE_KEYS = {
+    "incident_id", "title", "severity", "description", "reporter",
+    "affected_systems", "triage_notes", "root_cause", "rca_summary",
+    "log_evidence", "recommended_fix", "approved", "approver",
+    "approval_notes", "email_sent",
+}
+
+
+def _safe_state(values: dict) -> dict:
+    """Return only the keys safe to expose to the browser."""
+    return {k: v for k, v in values.items() if k in _SAFE_STATE_KEYS}
+
+
 # ── Request / Response models ────────────────────────────────────────
 class IncidentRequest(BaseModel):
     incident_id: str
-    recipients: Optional[list[str]] = None
+    recipients: Optional[list[EmailStr]] = None
+
+    @field_validator("incident_id")
+    @classmethod
+    def validate_incident_id(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not re.match(r"^[A-Z]+-\d+$", v):
+            raise ValueError("incident_id must match pattern INC-NNNN")
+        return v
 
 
 class ApprovalRequest(BaseModel):
@@ -38,9 +98,31 @@ class ApprovalRequest(BaseModel):
     approver: str
     notes: Optional[str] = ""
 
+    @field_validator("approver")
+    @classmethod
+    def sanitize_approver(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) > 100:
+            raise ValueError("approver name too long (max 100 chars)")
+        if not re.match(r"^[\w\s.\-@']+$", v):
+            raise ValueError("approver name contains invalid characters")
+        return v
+
+    @field_validator("notes")
+    @classmethod
+    def sanitize_notes(cls, v: Optional[str]) -> str:
+        if not v:
+            return ""
+        v = v.strip()
+        if len(v) > 500:
+            raise ValueError("notes too long (max 500 chars)")
+        # Strip control characters that could be used for prompt injection
+        v = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", v)
+        return v
+
 
 # ── Routes ───────────────────────────────────────────────────────────
-@api.post("/incident")
+@api.post("/incident", dependencies=[Security(verify_api_key)])
 async def start_incident(req: IncidentRequest):
     """Start a new incident workflow run. Returns run_id for streaming/approval."""
     run_id = str(uuid.uuid4())
@@ -64,7 +146,7 @@ async def start_incident(req: IncidentRequest):
         "approver": None,
         "approval_notes": None,
         "email_sent": False,
-        "notification_recipients": req.recipients or [],
+        "notification_recipients": [str(r) for r in (req.recipients or [])],
         "messages": [],
     }
 
@@ -84,10 +166,7 @@ async def start_incident(req: IncidentRequest):
     return {
         "run_id": run_id,
         "status": "awaiting_approval",
-        "state": {
-            k: v for k, v in state.values.items()
-            if k != "messages"
-        },
+        "state": _safe_state(state.values),
     }
 
 
@@ -105,28 +184,29 @@ async def stream_incident(run_id: str):
 
             yield sse_event("RUN_STARTED", {"run_id": run_id})
 
-            values = {k: v for k, v in state.values.items() if k != "messages"}
+            values = _safe_state(state.values)
             yield sse_event("STATE_SNAPSHOT", {"state": values})
 
             next_nodes = list(state.next) if state.next else []
             if "approval" in next_nodes:
                 yield sse_event("AWAITING_APPROVAL", {
                     "run_id": run_id,
-                    "rca_summary": state.values.get("rca_summary"),
-                    "severity": state.values.get("severity"),
-                    "root_cause": state.values.get("root_cause"),
+                    "rca_summary":     state.values.get("rca_summary"),
+                    "severity":        state.values.get("severity"),
+                    "root_cause":      state.values.get("root_cause"),
                     "recommended_fix": state.values.get("recommended_fix"),
                 })
 
             yield sse_event("RUN_FINISHED", {"run_id": run_id})
 
         except Exception as e:
-            yield sse_event("RUN_ERROR", {"message": str(e)})
+            logger.error("SSE stream error for run %s: %s", run_id, e, exc_info=True)
+            yield sse_event("RUN_ERROR", {"message": "An internal error occurred."})
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@api.post("/approve/{run_id}")
+@api.post("/approve/{run_id}", dependencies=[Security(verify_api_key)])
 async def approve_incident(run_id: str, req: ApprovalRequest):
     """HITL endpoint — resumes the graph after human review."""
     thread_config = {"configurable": {"thread_id": run_id}}
@@ -140,31 +220,29 @@ async def approve_incident(run_id: str, req: ApprovalRequest):
     try:
         graph_app.invoke(
             {
-                "approved": req.approved,
-                "approver": req.approver,
+                "approved":       req.approved,
+                "approver":       req.approver,
                 "approval_notes": req.notes,
             },
             config={**thread_config, "callbacks": callbacks},
         )
     except Exception as e:
-        # Graph may raise if notify step fails — still return success to the frontend
-        # so the modal closes; the workflow ran far enough.
-        print(f"[approve] graph invoke error (non-fatal): {e}")
+        # Graph may raise if notify step fails — still return success so modal closes
+        logger.warning("[approve] graph invoke error (non-fatal): %s", type(e).__name__)
 
     flush()
 
-    # get_state() returns None once the graph has reached END — guard against it
     email_sent = False
     try:
         final_state = graph_app.get_state(thread_config)
         if final_state and final_state.values:
             email_sent = bool(final_state.values.get("email_sent", False))
     except Exception as e:
-        print(f"[approve] get_state error (non-fatal): {e}")
+        logger.warning("[approve] get_state error (non-fatal): %s", type(e).__name__)
 
     return {
-        "run_id": run_id,
-        "status": "completed" if req.approved else "rejected",
+        "run_id":     run_id,
+        "status":     "completed" if req.approved else "rejected",
         "email_sent": email_sent,
     }
 
