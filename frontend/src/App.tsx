@@ -3,6 +3,7 @@ import ChatUI from "./components/ChatUI";
 import WorkflowStepper from "./components/WorkflowStepper";
 import HITLApprovalModal from "./components/HITLApprovalModal";
 import IncidentDetails from "./components/IncidentDetails";
+import RunHistory from "./components/RunHistory";
 import { useAgentStream } from "./hooks/useAgentStream";
 
 export default function App() {
@@ -164,6 +165,10 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {/* ── Run history ──────────────────────────────────── */}
+        <RunHistory key={finished ? "refresh" : "static"} />
+
       </div>
 
       {/* ── HITL approval modal ────────────────────────────── */}

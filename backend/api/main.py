@@ -12,6 +12,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from backend.audit.log import init_db, record_run_started, record_run_completed, get_all_runs, get_run
 from backend.config import API_KEY
 from backend.graph.workflow import app as graph_app
 from backend.memory.mem0_client import search_similar_incidents
@@ -25,6 +26,9 @@ limiter = Limiter(key_func=get_remote_address)
 api = FastAPI(title="Incident Response Agent API")
 api.state.limiter = limiter
 api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Initialise audit DB on startup (no-op if table already exists)
+init_db()
 
 api.add_middleware(
     CORSMiddleware,
@@ -172,6 +176,10 @@ async def start_incident(request: Request, req: IncidentRequest):
     flush()
 
     state = graph_app.get_state(thread_config)
+
+    # Persist run to audit log
+    record_run_started(run_id, req.incident_id, state.values if state else {})
+
     return {
         "run_id": run_id,
         "status": "awaiting_approval",
@@ -247,6 +255,8 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
         final_state = graph_app.get_state(thread_config)
         if final_state and final_state.values:
             email_sent = bool(final_state.values.get("email_sent", False))
+            # Persist approval outcome to audit log
+            record_run_completed(run_id, final_state.values)
     except Exception as e:
         logger.warning("[approve] get_state error (non-fatal): %s", type(e).__name__)
 
@@ -262,6 +272,22 @@ async def search_incidents(q: str):
     """Search past resolved incidents from Mem0 memory."""
     results = search_similar_incidents(q)
     return {"results": results}
+
+
+@api.get("/runs", dependencies=[Security(verify_api_key)])
+async def list_runs(limit: int = 100):
+    """Return audit log — all past incident runs newest first."""
+    runs = get_all_runs(limit=max(1, min(limit, 500)))
+    return {"runs": runs, "total": len(runs)}
+
+
+@api.get("/runs/{run_id}", dependencies=[Security(verify_api_key)])
+async def get_run_detail(run_id: str):
+    """Return full audit detail for a single run."""
+    run = get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return run
 
 
 @api.get("/health")

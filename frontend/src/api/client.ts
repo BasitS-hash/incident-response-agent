@@ -64,3 +64,34 @@ export async function searchIncidents(q: string) {
   const { data } = await apiClient.get("/incidents/search", { params: { q } });
   return data.results as Array<{ memory: string }>;
 }
+
+export interface RunRecord {
+  run_id: string;
+  incident_id: string;
+  started_at: string;
+  completed_at: string | null;
+  status: "running" | "awaiting_approval" | "completed" | "rejected";
+  severity: string | null;
+  affected_systems: string[];
+  triage_notes: string | null;
+  root_cause: string | null;
+  rca_summary: string | null;
+  recommended_fix: string | null;
+  approved: 0 | 1 | null;
+  approver: string | null;
+  approval_notes: string | null;
+  email_sent: 0 | 1;
+}
+
+export async function getRuns(limit = 100): Promise<RunRecord[]> {
+  const { data } = await apiClient.get<{ runs: RunRecord[]; total: number }>(
+    "/runs",
+    { params: { limit } }
+  );
+  return data.runs;
+}
+
+export async function getRun(run_id: string): Promise<RunRecord> {
+  const { data } = await apiClient.get<RunRecord>(`/runs/${run_id}`);
+  return data;
+}
