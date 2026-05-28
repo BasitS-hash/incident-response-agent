@@ -4,11 +4,14 @@ import logging
 import re
 import uuid
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Security, status
+from fastapi import FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, EmailStr, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from backend.config import API_KEY
 from backend.graph.workflow import app as graph_app
 from backend.memory.mem0_client import search_similar_incidents
@@ -16,7 +19,12 @@ from backend.observability.langfuse_client import get_callback_handler, flush
 
 logger = logging.getLogger(__name__)
 
+# ── Rate limiter ─────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+
 api = FastAPI(title="Incident Response Agent API")
+api.state.limiter = limiter
+api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 api.add_middleware(
     CORSMiddleware,
@@ -123,7 +131,8 @@ class ApprovalRequest(BaseModel):
 
 # ── Routes ───────────────────────────────────────────────────────────
 @api.post("/incident", dependencies=[Security(verify_api_key)])
-async def start_incident(req: IncidentRequest):
+@limiter.limit("10/minute")
+async def start_incident(request: Request, req: IncidentRequest):
     """Start a new incident workflow run. Returns run_id for streaming/approval."""
     run_id = str(uuid.uuid4())
     thread_config = {"configurable": {"thread_id": run_id}}
@@ -207,7 +216,8 @@ async def stream_incident(run_id: str):
 
 
 @api.post("/approve/{run_id}", dependencies=[Security(verify_api_key)])
-async def approve_incident(run_id: str, req: ApprovalRequest):
+@limiter.limit("20/minute")
+async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
     """HITL endpoint — resumes the graph after human review."""
     thread_config = {"configurable": {"thread_id": run_id}}
 
@@ -247,7 +257,7 @@ async def approve_incident(run_id: str, req: ApprovalRequest):
     }
 
 
-@api.get("/incidents/search")
+@api.get("/incidents/search", dependencies=[Security(verify_api_key)])
 async def search_incidents(q: str):
     """Search past resolved incidents from Mem0 memory."""
     results = search_similar_incidents(q)

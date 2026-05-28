@@ -127,12 +127,29 @@ npm run dev
 
 Open **http://localhost:5173**
 
-### Environment Variables (`backend/.env`)
+### Environment Variables (`.env` in project root)
 ```
-GOOGLE_API_KEY=your_gemini_key
-MEM0_API_KEY=your_mem0_key           # optional — graceful fallback
-LANGFUSE_PUBLIC_KEY=your_public_key  # optional — graceful fallback
-LANGFUSE_SECRET_KEY=your_secret_key  # optional — graceful fallback
+# LLM
+GEMINI_API_KEY=your_gemini_key
+
+# API auth — leave blank to run in dev mode (no key required)
+API_KEY=
+
+# Jira (optional — mocked if not set)
+JIRA_URL=https://yourorg.atlassian.net
+JIRA_EMAIL=you@yourorg.com
+JIRA_TOKEN=your_jira_api_token
+
+# Email / SMTP (optional — mocked if not set)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=your_app_password
+
+# Observability (optional — graceful fallback if not set)
+MEM0_API_KEY=your_mem0_key
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
 ```
 
 ---
@@ -147,6 +164,15 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 | Log mock | Splunk / Loki / Datadog | Replace `query_system_logs()` in `log_tools.py` |
 | Email mock | SendGrid / SES / SMTP | Add credentials to `.env`, update `email_tools.py` |
 | SQLite checkpointer | PostgreSQL | Swap `SqliteSaver` for `PostgresSaver` in `workflow.py` |
+
+---
+
+## Security
+
+- POST endpoints protected by `X-API-Key` header (set `API_KEY` in `.env`; leave blank for dev mode)
+- Input validation on all user-supplied fields — incident ID format enforced, approver name and notes sanitized against prompt injection
+- SSE state snapshots use an allowlist — internal fields (`notification_recipients`, etc.) are never sent to the browser
+- Security response headers on every response (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`)
 
 ---
 

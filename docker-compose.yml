@@ -1,3 +1,6 @@
+# ⚠️  LOCAL DEV ONLY — rotate ALL secrets before any non-local deployment.
+# NEXTAUTH_SECRET, SALT, and POSTGRES_PASSWORD below are placeholder values
+# intentionally weak. Do not use these in staging or production.
 version: "3.8"
 
 services:

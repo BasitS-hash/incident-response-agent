@@ -23,6 +23,7 @@ function resolveActiveStep(state: Record<string, unknown>): string {
 interface Props {
   state: Record<string, unknown>;
   awaitingApproval: boolean;
+  finished: boolean;
 }
 
 function CheckIcon() {
@@ -39,9 +40,9 @@ function CheckIcon() {
   );
 }
 
-export default function WorkflowStepper({ state, awaitingApproval }: Props) {
+export default function WorkflowStepper({ state, awaitingApproval, finished }: Props) {
   const active    = resolveActiveStep(state);
-  const activeIdx = STEPS.findIndex((s) => s.key === active);
+  const activeIdx = finished ? STEPS.length : STEPS.findIndex((s) => s.key === active);
 
   return (
     <div style={{ marginBottom: "32px", position: "relative", padding: "0 4px" }}>

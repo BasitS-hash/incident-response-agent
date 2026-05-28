@@ -89,6 +89,7 @@ export default function App() {
           <WorkflowStepper
             state={state}
             awaitingApproval={awaitingApproval && !approvalDone}
+            finished={finished}
           />
         )}
 
