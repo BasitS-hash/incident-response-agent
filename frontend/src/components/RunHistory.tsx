@@ -125,6 +125,7 @@ export default function RunHistory() {
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [filter,     setFilter]     = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,6 +145,17 @@ export default function RunHistory() {
   const toggleRow = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
 
+  const q = filter.trim().toLowerCase();
+  const visible = q
+    ? runs.filter(
+        (r) =>
+          r.incident_id.toLowerCase().includes(q) ||
+          r.status.toLowerCase().includes(q) ||
+          (r.severity ?? "").toLowerCase().includes(q) ||
+          (r.approver ?? "").toLowerCase().includes(q)
+      )
+    : runs;
+
   /* ── render ── */
   return (
     <div style={{
@@ -154,13 +166,29 @@ export default function RunHistory() {
       marginTop: "20px",
     }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <p style={{
           margin: 0, fontSize: "11px", fontWeight: 600,
           color: "#4b5563", textTransform: "uppercase", letterSpacing: "0.08em",
+          flexShrink: 0,
         }}>
           Run History
         </p>
+
+        {/* Search filter */}
+        <input
+          type="text"
+          placeholder="Filter by incident, severity, status…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{
+            flex: 1, minWidth: 180, background: "#0a1628",
+            border: "1px solid #1e293b", borderRadius: 6,
+            color: "#94a3b8", fontSize: 12, padding: "4px 10px",
+            outline: "none",
+          }}
+        />
+
         <button
           onClick={load}
           disabled={loading}
@@ -168,6 +196,7 @@ export default function RunHistory() {
             background: "none", border: "1px solid #1e293b",
             color: "#4b5563", borderRadius: 6, padding: "3px 10px",
             fontSize: 11, cursor: loading ? "not-allowed" : "pointer",
+            flexShrink: 0,
           }}
         >
           {loading ? "Loading…" : "Refresh"}
@@ -180,14 +209,21 @@ export default function RunHistory() {
       )}
 
       {/* Empty */}
-      {!loading && !error && runs.length === 0 && (
+      {!loading && !error && visible.length === 0 && runs.length === 0 && (
         <p style={{ color: "#1f2937", fontSize: 13, textAlign: "center", padding: "24px 0" }}>
           No runs yet — start an incident above to see history here.
         </p>
       )}
 
+      {/* No-match message when filter is active */}
+      {!loading && !error && runs.length > 0 && visible.length === 0 && (
+        <p style={{ color: "#374151", fontSize: 13, textAlign: "center", padding: "16px 0" }}>
+          No runs match "{filter}"
+        </p>
+      )}
+
       {/* Table */}
-      {runs.length > 0 && (
+      {visible.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
@@ -206,7 +242,7 @@ export default function RunHistory() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => {
+              {visible.map((run) => {
                 const isOpen = expandedId === run.run_id;
                 return (
                   <>

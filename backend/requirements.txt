@@ -13,3 +13,7 @@ sse-starlette>=2.1.0
 pydantic[email]>=2.0.0
 langgraph-checkpoint>=1.0.0
 slowapi>=0.1.9
+
+# Dev / test
+pytest>=8.0.0
+pytest-cov>=5.0.0
