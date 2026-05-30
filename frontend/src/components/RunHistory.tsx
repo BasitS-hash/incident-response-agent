@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { getRuns, type RunRecord } from "../api/client";
 
 /* ── helpers ────────────────────────────────────────────────────── */
@@ -245,7 +245,7 @@ export default function RunHistory() {
               {visible.map((run) => {
                 const isOpen = expandedId === run.run_id;
                 return (
-                  <>
+                  <Fragment key={run.run_id}>
                     <tr
                       key={run.run_id}
                       onClick={() => toggleRow(run.run_id)}
@@ -293,8 +293,8 @@ export default function RunHistory() {
                         {isOpen ? "▲" : "▼"}
                       </td>
                     </tr>
-                    {isOpen && <ExpandedRow key={`${run.run_id}-detail`} run={run} />}
-                  </>
+                    {isOpen && <ExpandedRow run={run} />}
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -88,7 +88,7 @@ export async function getRuns(limit = 100): Promise<RunRecord[]> {
     "/runs",
     { params: { limit } }
   );
-  return data.runs;
+  return Array.isArray(data?.runs) ? data.runs : [];
 }
 
 export async function getRun(run_id: string): Promise<RunRecord> {
