@@ -1,27 +1,25 @@
 #!/bin/bash
-# Start the full incident response agent stack
+# Incident Response Agent — one-click startup for macOS
+# Run from the project root: ./start.sh
 
-echo "Starting Incident Response Agent..."
-
-# Activate venv
-source .venv/bin/activate
-
-# Start FastAPI backend in background
-echo "[1/2] Starting FastAPI backend on port 8000..."
-uvicorn backend.api.main:api --reload --port 8000 &
-BACKEND_PID=$!
-
-# Start React frontend
-echo "[2/2] Starting React frontend on port 5173..."
-cd frontend && npm run dev &
-FRONTEND_PID=$!
+PROJECT="$(cd "$(dirname "$0")" && pwd)"
 
 echo ""
-echo "Backend:  http://localhost:8000"
-echo "Frontend: http://localhost:5173"
-echo "API Docs: http://localhost:8000/docs"
+echo "  Incident Response Agent"
+echo "  ========================"
 echo ""
-echo "Press Ctrl+C to stop both servers."
 
-trap "kill $BACKEND_PID $FRONTEND_PID" EXIT
-wait
+# ── Backend ──────────────────────────────────────────────────────────
+echo "  Starting backend  (http://localhost:8000) ..."
+osascript -e "tell app \"Terminal\" to do script \"cd '$PROJECT' && source .venv/bin/activate && uvicorn backend.api.main:api --reload --port 8000\""
+
+sleep 1
+
+# ── Frontend ─────────────────────────────────────────────────────────
+echo "  Starting frontend (http://localhost:5173) ..."
+osascript -e "tell app \"Terminal\" to do script \"cd '$PROJECT/frontend' && npm run dev\""
+
+echo ""
+echo "  Both servers starting. Open http://localhost:5173 in your browser."
+echo "  Close the two Terminal windows to stop."
+echo ""
