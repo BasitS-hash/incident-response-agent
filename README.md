@@ -27,7 +27,7 @@ Intake → Triage → RCA → Approval (HITL pause) → Notify
 | Agent | What it does |
 |-------|-------------|
 | **Intake** | Fetches incident details from Jira (title, description, reporter, priority) |
-| **Triage** | Assigns severity (P1–P4), identifies affected systems, adds triage notes |
+| **Triage** | Assigns severity (P1–P4), identifies affected systems, queries Mem0 for similar past incidents |
 | **RCA** | Queries logs, metrics, and deployment history — LLM identifies root cause and recommends a fix |
 | **Approval** | Human-in-the-loop interrupt — workflow pauses until an authorized approver accepts or rejects |
 | **Notify** | Sends email notification with full RCA summary to the on-call team |
@@ -38,14 +38,16 @@ Intake → Triage → RCA → Approval (HITL pause) → Notify
 
 | Layer | Technology |
 |-------|-----------|
-| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — stateful multi-agent workflow with SQLite checkpointing for HITL persistence |
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — stateful multi-agent workflow with MemorySaver checkpointing for HITL persistence |
+| **LLM** | Google Gemini 2.5 Flash via `langchain-google-genai` (swap to OpenAI via `LLM_PROVIDER=openai`) |
 | **Tools** | [MCP](https://modelcontextprotocol.io/) — modular tool server (Jira, logs, metrics, email) |
 | **Memory** | [Mem0](https://mem0.ai/) — remembers past incidents and resolutions across runs |
 | **Observability** | [Langfuse](https://langfuse.com/) — full LLM tracing, token usage, latency per agent |
 | **Streaming** | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) — SSE protocol for real-time frontend updates |
-| **LLM** | Google Gemini 2.5 Flash via LangChain |
 | **Backend** | FastAPI + uvicorn |
 | **Frontend** | React 19 + TypeScript + Vite |
+| **Audit log** | SQLite — persists every run with agent outputs, approval decision, and timestamps |
+| **Rate limiting** | slowapi — 10 req/min on POST /incident, 20 req/min on POST /approve |
 
 ---
 
@@ -56,6 +58,8 @@ Intake → Triage → RCA → Approval (HITL pause) → Notify
 | `INC-101` | Auth service | Redis connection pool reduced by deployment → 97% cache miss rate → OOMKill | P1 |
 | `INC-205` | Payment service | ORM migration didn't port connection pool config → PostgreSQL connection exhaustion | P2 |
 | `INC-312` | Notification service | Marketing deploy accidentally applied unsubscribe logic to transactional emails → AWS SES suspended | P2 |
+
+> Jira tickets, logs, and incident data are mocked for demo purposes. Integration layer is built and ready for real credentials.
 
 ---
 
@@ -68,9 +72,13 @@ incident-response-agent/
 │   │   ├── intake_agent.py       # Fetches incident from Jira
 │   │   ├── triage_agent.py       # Assigns severity and affected systems
 │   │   ├── rca_agent.py          # Root cause analysis via logs + LLM
-│   │   └── notify_agent.py       # Sends email notification
+│   │   ├── notify_agent.py       # Sends email notification
+│   │   └── llm_factory.py        # Gemini / OpenAI provider switch
 │   ├── api/
-│   │   └── main.py               # FastAPI routes + SSE streaming
+│   │   └── main.py               # FastAPI routes + SSE streaming + rate limiting
+│   ├── audit/
+│   │   └── log.py                # SQLite audit log — persists every run
+│   ├── data/                     # Runtime SQLite DB (gitignored)
 │   ├── graph/
 │   │   ├── workflow.py           # LangGraph graph definition
 │   │   ├── nodes.py              # Node wrappers + routing logic
@@ -84,20 +92,28 @@ incident-response-agent/
 │   │   └── mem0_client.py        # Mem0 for cross-run incident memory
 │   ├── observability/
 │   │   └── langfuse_client.py    # Langfuse tracing
+│   ├── config.py                 # Env var loading
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
 │       ├── components/
 │       │   ├── ChatUI.tsx             # Real-time chat event log
-│       │   ├── WorkflowStepper.tsx    # Visual progress dots
+│       │   ├── WorkflowStepper.tsx    # Visual 5-step progress indicator
 │       │   ├── IncidentDetails.tsx    # Live state panel
-│       │   └── HITLApprovalModal.tsx  # Human review modal
+│       │   ├── HITLApprovalModal.tsx  # Human review modal
+│       │   └── RunHistory.tsx         # Audit log table with search/filter
 │       ├── hooks/
 │       │   └── useAgentStream.ts      # SSE event consumer
 │       └── api/
 │           └── client.ts             # Axios API client
-├── docker-compose.yml
-└── start.sh
+├── tests/
+│   ├── test_audit_log.py         # SQLite audit log — 19 tests
+│   ├── test_agents.py            # Agent helper functions — 18 tests
+│   └── test_api.py               # Input validators + safe-state — 20 tests
+├── docker-compose.yml            # Local Langfuse + Postgres observability stack
+├── start.sh                      # macOS one-click startup
+├── start.ps1                     # Windows one-click startup
+└── .env                          # Secrets — never committed
 ```
 
 ---
@@ -107,30 +123,56 @@ incident-response-agent/
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- A `.env` file in `backend/` (see below)
+- A `.env` file in the project root (see below)
 
-### Backend
+### Quick start (macOS)
 ```bash
-cd backend
+./start.sh
+```
+Opens both servers in separate Terminal windows automatically.
+
+### Quick start (Windows)
+```powershell
+.\start.ps1
+```
+
+### Manual start
+
+**Backend** (run from project root):
+```bash
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+source .venv/bin/activate      # Windows: .venv\Scripts\Activate.ps1
+pip install -r backend/requirements.txt
 uvicorn backend.api.main:api --reload --port 8000
 ```
 
-### Frontend
+**Frontend:**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Open **http://localhost:5173**
+Open **http://localhost:5173** (or 5174 if 5173 is in use).
 
-### Environment Variables (`.env` in project root)
+### Running Tests
+```bash
+source .venv/bin/activate
+python -m pytest tests/ -v
 ```
-# LLM
+57 tests, no external dependencies required.
+
+---
+
+## Environment Variables (`.env` in project root)
+
+```env
+# LLM — required
 GEMINI_API_KEY=your_gemini_key
+
+# LLM provider — "gemini" (default) or "openai"
+LLM_PROVIDER=gemini
+OPENAI_API_KEY=                    # required if LLM_PROVIDER=openai
 
 # API auth — leave blank to run in dev mode (no key required)
 API_KEY=
@@ -150,7 +192,22 @@ SMTP_PASSWORD=your_app_password
 MEM0_API_KEY=your_mem0_key
 LANGFUSE_PUBLIC_KEY=your_public_key
 LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=http://localhost:3001   # local Docker instance
 ```
+
+---
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/incident` | API key | Start a new incident workflow |
+| `GET` | `/stream/{run_id}` | — | SSE stream of AG-UI events |
+| `POST` | `/approve/{run_id}` | API key | Submit approval / rejection |
+| `GET` | `/runs` | API key | List all past runs (audit log) |
+| `GET` | `/runs/{run_id}` | API key | Full detail for a single run |
+| `GET` | `/incidents/search` | API key | Semantic search over Mem0 memory |
+| `GET` | `/health` | — | Health check |
 
 ---
 
@@ -160,19 +217,22 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 
 | Mock | Real integration | What to change |
 |------|-----------------|----------------|
-| Jira mock | Jira REST API | Add `JIRA_API_TOKEN` + `JIRA_BASE_URL` to `.env`, update `jira_tools.py` |
+| Jira mock | Jira REST API | Set `JIRA_URL`, `JIRA_EMAIL`, `JIRA_TOKEN` in `.env` |
 | Log mock | Splunk / Loki / Datadog | Replace `query_system_logs()` in `log_tools.py` |
-| Email mock | SendGrid / SES / SMTP | Add credentials to `.env`, update `email_tools.py` |
-| SQLite checkpointer | PostgreSQL | Swap `SqliteSaver` for `PostgresSaver` in `workflow.py` |
+| Email mock | Gmail / SendGrid / SES | Set `SMTP_*` vars in `.env` |
+| SQLite checkpointer | PostgreSQL | Swap `MemorySaver` for `PostgresSaver` in `workflow.py` |
 
 ---
 
 ## Security
 
-- POST endpoints protected by `X-API-Key` header (set `API_KEY` in `.env`; leave blank for dev mode)
-- Input validation on all user-supplied fields — incident ID format enforced, approver name and notes sanitized against prompt injection
-- SSE state snapshots use an allowlist — internal fields (`notification_recipients`, etc.) are never sent to the browser
-- Security response headers on every response (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`)
+- **Auth** — POST endpoints and audit log protected by `X-API-Key` header; blank `API_KEY` enables dev mode
+- **Rate limiting** — 10 req/min on `POST /incident`, 20 req/min on `POST /approve`
+- **Input validation** — incident ID format enforced (`INC-NNNN`), approver name and notes sanitized against prompt injection (control chars stripped, max length enforced)
+- **State allowlist** — internal fields (`notification_recipients`, `messages`, `similar_incidents`) are never sent to the browser
+- **Memory injection cap** — Mem0 context truncated to 500 chars per entry to prevent RAG data poisoning
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response
+- **Langfuse TLS** — warns if `LANGFUSE_HOST` points to a remote host over plain HTTP
 
 ---
 
@@ -182,11 +242,10 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 - [ ] Slack / Teams notification channel
 - [ ] SSO on the approval modal (restrict to authorized SREs)
 - [ ] Reject flow re-runs RCA with approver feedback
-- [ ] Multi-incident dashboard
-- [ ] Real Jira, email, and log integrations
+- [ ] Real Jira, email, and log integrations (credentials pending)
 
 ---
 
 ## Author
 
-Basit Sherazi
+Basit Sherazi — DMI LLC
