@@ -29,3 +29,9 @@ backend/data/*.db-wal
 .DS_Store
 Thumbs.db
 frontend/.env.local
+
+# Word temp lock files
+~$*
+
+# gstack internal
+.gstack/
