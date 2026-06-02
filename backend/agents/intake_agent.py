@@ -1,4 +1,3 @@
-"""Intake agent — parses the Jira incident payload into structured IncidentState."""
 import json
 import re
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -13,8 +12,6 @@ markdown fences) with keys: incident_id, title, description, reporter, created_a
 
 
 def _parse_llm_json(content: str) -> dict:
-    """Extract JSON from the LLM response, stripping markdown fences if present."""
-    # Strip ```json ... ``` or ``` ... ``` wrappers
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip(), flags=re.MULTILINE)
     return json.loads(cleaned)
 
@@ -32,7 +29,6 @@ def run_intake(incident_id: str) -> dict:
     try:
         parsed = _parse_llm_json(str(response.content))
     except (json.JSONDecodeError, AttributeError):
-        # Fall back to raw Jira fields if the LLM returns unparseable output
         parsed = {
             "incident_id": raw["id"],
             "title": raw["title"],

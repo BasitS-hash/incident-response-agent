@@ -1,4 +1,3 @@
-"""FastAPI backend — exposes LangGraph workflow over HTTP with AG-UI SSE streaming."""
 import json
 import logging
 import re
@@ -20,14 +19,12 @@ from backend.observability.langfuse_client import get_callback_handler, flush
 
 logger = logging.getLogger(__name__)
 
-# ── Rate limiter ─────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
 
 api = FastAPI(title="Incident Response Agent API")
 api.state.limiter = limiter
 api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Initialise audit DB on startup (no-op if table already exists)
 init_db()
 
 api.add_middleware(
@@ -45,7 +42,6 @@ api.add_middleware(
 )
 
 
-# ── Security headers middleware ──────────────────────────────────────
 @api.middleware("http")
 async def add_security_headers(request, call_next):
     response = await call_next(request)
@@ -55,15 +51,12 @@ async def add_security_headers(request, call_next):
     return response
 
 
-# ── API key auth ─────────────────────────────────────────────────────
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 async def verify_api_key(key: str = Security(_api_key_header)):
-    """Protect state-changing POST endpoints with an API key.
-    If API_KEY is not set in .env, auth is skipped (local dev mode)."""
     if not API_KEY:
-        return  # dev mode — no key configured, allow all
+        return
     if key != API_KEY:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -71,13 +64,11 @@ async def verify_api_key(key: str = Security(_api_key_header)):
         )
 
 
-# ── AG-UI event helpers ──────────────────────────────────────────────
 def sse_event(event_type: str, data: dict) -> str:
     payload = json.dumps({"type": event_type, **data})
     return f"data: {payload}\n\n"
 
 
-# ── Safe state keys sent to the frontend ────────────────────────────
 _SAFE_STATE_KEYS = {
     "incident_id", "title", "severity", "description", "reporter",
     "affected_systems", "triage_notes", "root_cause", "rca_summary",
@@ -87,11 +78,9 @@ _SAFE_STATE_KEYS = {
 
 
 def _safe_state(values: dict) -> dict:
-    """Return only the keys safe to expose to the browser."""
     return {k: v for k, v in values.items() if k in _SAFE_STATE_KEYS}
 
 
-# ── Request / Response models ────────────────────────────────────────
 class IncidentRequest(BaseModel):
     incident_id: str
     recipients: Optional[list[EmailStr]] = None
@@ -128,16 +117,13 @@ class ApprovalRequest(BaseModel):
         v = v.strip()
         if len(v) > 500:
             raise ValueError("notes too long (max 500 chars)")
-        # Strip control characters that could be used for prompt injection
         v = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", v)
         return v
 
 
-# ── Routes ───────────────────────────────────────────────────────────
 @api.post("/incident", dependencies=[Security(verify_api_key)])
 @limiter.limit("10/minute")
 async def start_incident(request: Request, req: IncidentRequest):
-    """Start a new incident workflow run. Returns run_id for streaming/approval."""
     run_id = str(uuid.uuid4())
     thread_config = {"configurable": {"thread_id": run_id}}
 
@@ -176,8 +162,6 @@ async def start_incident(request: Request, req: IncidentRequest):
     flush()
 
     state = graph_app.get_state(thread_config)
-
-    # Persist run to audit log
     record_run_started(run_id, req.incident_id, state.values if state else {})
 
     return {
@@ -189,7 +173,6 @@ async def start_incident(request: Request, req: IncidentRequest):
 
 @api.get("/stream/{run_id}")
 async def stream_incident(run_id: str):
-    """SSE endpoint — streams AG-UI events for the given run."""
     thread_config = {"configurable": {"thread_id": run_id}}
 
     async def event_generator():
@@ -226,7 +209,6 @@ async def stream_incident(run_id: str):
 @api.post("/approve/{run_id}", dependencies=[Security(verify_api_key)])
 @limiter.limit("20/minute")
 async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
-    """HITL endpoint — resumes the graph after human review."""
     thread_config = {"configurable": {"thread_id": run_id}}
 
     lf_handler = get_callback_handler(
@@ -245,7 +227,6 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
             config={**thread_config, "callbacks": callbacks},
         )
     except Exception as e:
-        # Graph may raise if notify step fails — still return success so modal closes
         logger.warning("[approve] graph invoke error (non-fatal): %s", type(e).__name__)
 
     flush()
@@ -255,7 +236,6 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
         final_state = graph_app.get_state(thread_config)
         if final_state and final_state.values:
             email_sent = bool(final_state.values.get("email_sent", False))
-            # Persist approval outcome to audit log
             record_run_completed(run_id, final_state.values)
     except Exception as e:
         logger.warning("[approve] get_state error (non-fatal): %s", type(e).__name__)
@@ -269,21 +249,18 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
 
 @api.get("/incidents/search", dependencies=[Security(verify_api_key)])
 async def search_incidents(q: str):
-    """Search past resolved incidents from Mem0 memory."""
     results = search_similar_incidents(q)
     return {"results": results}
 
 
 @api.get("/runs", dependencies=[Security(verify_api_key)])
 async def list_runs(limit: int = 100):
-    """Return audit log — all past incident runs newest first."""
     runs = get_all_runs(limit=max(1, min(limit, 500)))
     return {"runs": runs, "total": len(runs)}
 
 
 @api.get("/runs/{run_id}", dependencies=[Security(verify_api_key)])
 async def get_run_detail(run_id: str):
-    """Return full audit detail for a single run."""
     run = get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found.")

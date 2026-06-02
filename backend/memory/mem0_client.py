@@ -1,4 +1,3 @@
-"""Mem0 memory client — stores and retrieves past incident context across runs."""
 import logging
 from backend.config import MEM0_API_KEY
 
@@ -21,7 +20,6 @@ def get_client():
 
 
 def search_similar_incidents(description: str, limit: int = 3) -> list[dict]:
-    """Query memory for past incidents similar to the current one."""
     client = get_client()
     if not client:
         return []
@@ -33,7 +31,6 @@ def search_similar_incidents(description: str, limit: int = 3) -> list[dict]:
 
 
 def store_resolved_incident(incident_id: str, summary: dict) -> None:
-    """Persist a resolved incident's details for future RCA reference."""
     client = get_client()
     if not client:
         return

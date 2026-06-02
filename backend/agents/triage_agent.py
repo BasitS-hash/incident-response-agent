@@ -1,4 +1,3 @@
-"""Triage agent — classifies severity and affected systems, queries Mem0 for similar incidents."""
 from langchain_core.messages import SystemMessage, HumanMessage
 from backend.memory.mem0_client import search_similar_incidents
 from backend.agents.llm_factory import get_llm

@@ -1,7 +1,3 @@
-"""Mock log and metrics tools — replace with real log aggregator (Splunk, Loki, etc.)."""
-
-# ── Per-service mock data ────────────────────────────────────────────────────
-
 _LOG_DATA: dict[str, list[str]] = {
     "auth": [
         "[ERROR] auth-service: 503 Service Unavailable returned to client (x312 in last 30m)",

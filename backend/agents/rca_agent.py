@@ -1,4 +1,3 @@
-"""RCA agent — queries logs and metrics, synthesizes root cause analysis."""
 from langchain_core.messages import SystemMessage, HumanMessage
 from backend.mcp_server.tools.log_tools import (
     query_system_logs,
@@ -51,7 +50,6 @@ def run_rca(state: dict) -> dict:
     parsed = json.loads(match.group()) if match else {}
 
     def _str(val, fallback=""):
-        """Ensure LLM output is always a flat string, never a nested object."""
         if val is None:
             return fallback
         if isinstance(val, dict):

@@ -1,4 +1,3 @@
-"""Returns the configured LLM — swap LLM_PROVIDER in .env to switch providers."""
 from backend.config import LLM_PROVIDER, OPENAI_API_KEY, GEMINI_API_KEY
 
 
@@ -10,7 +9,6 @@ def get_llm(temperature: float = 0):
             api_key=OPENAI_API_KEY,
             temperature=temperature,
         )
-    # Default: Google Gemini
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",

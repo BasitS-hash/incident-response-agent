@@ -1,4 +1,3 @@
-"""Mock email tool — replace with real SMTP or SendGrid when ready."""
 import logging
 
 logger = logging.getLogger(__name__)

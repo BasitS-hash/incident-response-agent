@@ -1,4 +1,3 @@
-"""Graph node wrappers — each function maps IncidentState in → IncidentState update out."""
 from backend.graph.state import IncidentState
 from backend.agents.intake_agent import run_intake
 from backend.agents.triage_agent import run_triage
@@ -19,11 +18,6 @@ def rca_node(state: IncidentState) -> dict:
 
 
 def approval_node(state: IncidentState) -> dict:
-    """
-    This node is the HITL interrupt point.
-    The graph pauses here automatically (interrupt_before=["approval"]).
-    It resumes when the API receives POST /approve/{run_id}.
-    """
     return {}
 
 
@@ -32,12 +26,10 @@ def notify_node(state: IncidentState) -> dict:
 
 
 def route_after_triage(state: IncidentState) -> str:
-    """All incidents go through RCA — human approval always needs a root cause."""
     return "rca"
 
 
 def route_after_approval(state: IncidentState) -> str:
-    """If rejected, loop back to RCA for re-analysis."""
     if state.get("approved") is False:
         return "rca"
     return "notify"

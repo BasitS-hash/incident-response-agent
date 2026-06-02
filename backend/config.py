@@ -3,10 +3,7 @@ import os
 
 load_dotenv()
 
-# API key — required for POST endpoints in non-local deployments
 API_KEY = os.getenv("API_KEY", "")
-
-# LLM provider: "gemini" (default) or "openai"
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

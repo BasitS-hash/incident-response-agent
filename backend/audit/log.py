@@ -1,22 +1,3 @@
-"""SQLite-backed audit log — persists run history across restarts.
-
-Schema (runs table):
-  run_id            – UUID from the graph thread
-  incident_id       – e.g. INC-101
-  started_at        – ISO-8601 UTC, set when POST /incident is called
-  completed_at      – ISO-8601 UTC, set after POST /approve resolves
-  status            – 'running' | 'awaiting_approval' | 'completed' | 'rejected'
-  severity          – P1-P4 from triage agent
-  affected_systems  – JSON-encoded list
-  triage_notes      – free-text from triage agent
-  root_cause        – from RCA agent
-  rca_summary       – human-readable summary from RCA agent
-  recommended_fix   – from RCA agent
-  approved          – 0 / 1 / NULL (not yet decided)
-  approver          – name of the person who approved/rejected
-  approval_notes    – optional notes from approver
-  email_sent        – 0 / 1
-"""
 import json
 import logging
 import sqlite3

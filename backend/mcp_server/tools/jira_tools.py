@@ -1,4 +1,3 @@
-"""Mock Jira tools — swap HTTP calls for real Jira SDK when credentials are ready."""
 from datetime import datetime
 
 _MOCK_INCIDENTS: dict[str, dict] = {

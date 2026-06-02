@@ -1,4 +1,3 @@
-"""LangGraph workflow — wires all nodes and edges into the incident response pipeline."""
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from backend.graph.state import IncidentState
@@ -25,7 +24,6 @@ def build_graph():
     graph.add_node("notify",   notify_node)
 
     graph.set_entry_point("intake")
-
     graph.add_edge("intake", "triage")
 
     graph.add_conditional_edges(

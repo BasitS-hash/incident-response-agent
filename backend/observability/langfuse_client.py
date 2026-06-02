@@ -1,4 +1,3 @@
-"""Langfuse observability — wraps all LLM calls with trace/span context."""
 import logging
 from urllib.parse import urlparse
 from backend.config import LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
@@ -7,7 +6,6 @@ logger = logging.getLogger(__name__)
 
 
 def _warn_if_insecure_host() -> None:
-    """Warn if Langfuse is pointed at a remote host over plain HTTP."""
     parsed = urlparse(LANGFUSE_HOST)
     is_local = parsed.hostname in ("localhost", "127.0.0.1", "::1")
     if parsed.scheme == "http" and not is_local:
@@ -20,8 +18,6 @@ def _warn_if_insecure_host() -> None:
 
 
 def get_callback_handler(trace_name: str, metadata: dict = None):
-    """Returns a LangChain callback handler that auto-traces all LLM calls.
-    Falls back gracefully if Langfuse is not configured."""
     if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY:
         logger.info("Langfuse not configured — skipping observability.")
         return None
@@ -40,7 +36,6 @@ def get_callback_handler(trace_name: str, metadata: dict = None):
 
 
 def flush():
-    """Flush all pending traces to Langfuse."""
     if not LANGFUSE_PUBLIC_KEY or not LANGFUSE_SECRET_KEY:
         return
     try:
