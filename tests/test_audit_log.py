@@ -1,8 +1,8 @@
 """Tests for backend/audit/log.py — SQLite run history store."""
-import json
 import uuid
-import pytest
 from pathlib import Path
+
+import pytest
 
 # ── Override the DB path to a temp file so tests never touch the real DB ──
 import backend.audit.log as audit_module

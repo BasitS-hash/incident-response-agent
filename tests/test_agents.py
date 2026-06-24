@@ -1,8 +1,8 @@
 """Unit tests for pure agent helper functions (no LLM calls)."""
 import json
 import re
-import pytest
 
+import pytest
 
 # ── intake_agent._parse_llm_json ──────────────────────────────────────────
 

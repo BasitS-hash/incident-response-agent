@@ -2,10 +2,8 @@
 import pytest
 from pydantic import ValidationError
 
-
 # ── Import models directly to avoid triggering the full graph at module import ──
-from backend.api.main import IncidentRequest, ApprovalRequest, _safe_state
-
+from backend.api.main import ApprovalRequest, IncidentRequest, _safe_state
 
 # ── IncidentRequest validator ─────────────────────────────────────────────
 
