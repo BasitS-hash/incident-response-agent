@@ -1,4 +1,5 @@
 import logging
+
 from backend.config import MEM0_API_KEY
 
 logger = logging.getLogger(__name__)

@@ -1,9 +1,8 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,7 @@ def init_db() -> None:
 def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
     """Insert a new run row right after the initial graph invoke completes
     (triage + RCA are done, workflow is now blocked at the approval interrupt)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     affected = json.dumps(state.get("affected_systems") or [])
     try:
         with _get_conn() as conn:
@@ -81,7 +80,7 @@ def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
 
 def record_run_completed(run_id: str, state: dict) -> None:
     """Update the run row after the approval step resolves."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     approved = state.get("approved")
     status = "completed" if approved else "rejected"
     try:
@@ -143,7 +142,7 @@ def get_all_runs(limit: int = 100) -> list[dict]:
         return []
 
 
-def get_run(run_id: str) -> Optional[dict]:
+def get_run(run_id: str) -> dict | None:
     """Return a single run by run_id, or None if not found."""
     try:
         with _get_conn() as conn:

@@ -1,16 +1,17 @@
 """WAT — Workflow Agent Tools: custom MCP server exposing all agent tools."""
 from mcp.server.fastmcp import FastMCP
+
+from backend.mcp_server.tools.email_tools import send_email_notification
 from backend.mcp_server.tools.jira_tools import (
     get_jira_incident,
-    update_jira_ticket,
     search_jira_incidents,
+    update_jira_ticket,
 )
 from backend.mcp_server.tools.log_tools import (
-    query_system_logs,
-    get_system_metrics,
     get_deployment_history,
+    get_system_metrics,
+    query_system_logs,
 )
-from backend.mcp_server.tools.email_tools import send_email_notification
 
 mcp = FastMCP("WAT - Workflow Agent Tools")
 

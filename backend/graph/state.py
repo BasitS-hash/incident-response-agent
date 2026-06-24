@@ -1,4 +1,5 @@
-from typing import TypedDict, Optional, Annotated
+from typing import Annotated, TypedDict
+
 from langgraph.graph.message import add_messages
 
 
@@ -9,19 +10,19 @@ class IncidentState(TypedDict):
     reporter: str
     created_at: str
 
-    severity: Optional[str]
+    severity: str | None
     affected_systems: list[str]
-    triage_notes: Optional[str]
+    triage_notes: str | None
     similar_incidents: list[dict]
 
-    root_cause: Optional[str]
-    rca_summary: Optional[str]
+    root_cause: str | None
+    rca_summary: str | None
     log_evidence: list[str]
-    recommended_fix: Optional[str]
+    recommended_fix: str | None
 
-    approved: Optional[bool]
-    approver: Optional[str]
-    approval_notes: Optional[str]
+    approved: bool | None
+    approver: str | None
+    approval_notes: str | None
 
     email_sent: bool
     notification_recipients: list[str]

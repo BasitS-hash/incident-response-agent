@@ -1,6 +1,7 @@
 import logging
 from urllib.parse import urlparse
-from backend.config import LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
+
+from backend.config import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 
 logger = logging.getLogger(__name__)
 

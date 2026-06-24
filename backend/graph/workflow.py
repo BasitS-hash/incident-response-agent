@@ -1,15 +1,16 @@
-from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from backend.graph.state import IncidentState
+from langgraph.graph import END, StateGraph
+
 from backend.graph.nodes import (
-    intake_node,
-    triage_node,
-    rca_node,
     approval_node,
+    intake_node,
     notify_node,
-    route_after_triage,
+    rca_node,
     route_after_approval,
+    route_after_triage,
+    triage_node,
 )
+from backend.graph.state import IncidentState
 
 checkpointer = MemorySaver()
 
