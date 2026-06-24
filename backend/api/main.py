@@ -2,8 +2,9 @@ import json
 import logging
 import re
 import uuid
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Request, Security, status
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, Query, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
@@ -11,21 +12,36 @@ from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from backend.audit.log import init_db, record_run_started, record_run_completed, get_all_runs, get_run
-from backend.config import API_KEY
+
+from backend.audit.log import (
+    get_all_runs,
+    get_run,
+    init_db,
+    record_run_completed,
+    record_run_started,
+)
+from backend.config import API_KEY, validate_config
 from backend.graph.workflow import app as graph_app
 from backend.memory.mem0_client import search_similar_incidents
-from backend.observability.langfuse_client import get_callback_handler, flush
+from backend.observability.langfuse_client import flush, get_callback_handler
 
 logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address)
 
-api = FastAPI(title="Incident Response Agent API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Fail fast on broken config (e.g. missing LLM key) instead of erroring on
+    # the first incident request. Surfaces security warnings (e.g. auth off).
+    validate_config()
+    init_db()
+    yield
+
+
+api = FastAPI(title="Incident Response Agent API", lifespan=lifespan)
 api.state.limiter = limiter
 api.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-init_db()
 
 api.add_middleware(
     CORSMiddleware,
@@ -83,7 +99,7 @@ def _safe_state(values: dict) -> dict:
 
 class IncidentRequest(BaseModel):
     incident_id: str
-    recipients: Optional[list[EmailStr]] = None
+    recipients: list[EmailStr] | None = None
 
     @field_validator("incident_id")
     @classmethod
@@ -97,7 +113,7 @@ class IncidentRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     approved: bool
     approver: str
-    notes: Optional[str] = ""
+    notes: str | None = ""
 
     @field_validator("approver")
     @classmethod
@@ -111,7 +127,7 @@ class ApprovalRequest(BaseModel):
 
     @field_validator("notes")
     @classmethod
-    def sanitize_notes(cls, v: Optional[str]) -> str:
+    def sanitize_notes(cls, v: str | None) -> str:
         if not v:
             return ""
         v = v.strip()
@@ -248,8 +264,9 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
 
 
 @api.get("/incidents/search", dependencies=[Security(verify_api_key)])
-async def search_incidents(q: str):
-    results = search_similar_incidents(q)
+@limiter.limit("30/minute")
+async def search_incidents(request: Request, q: str = Query(..., min_length=1, max_length=500)):
+    results = search_similar_incidents(q.strip())
     return {"results": results}
 
 
