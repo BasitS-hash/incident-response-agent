@@ -1,10 +1,9 @@
 """Notify agent — composes and sends the RCA summary email after human approval."""
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from backend.agents.llm_factory import get_cached_llm
 from backend.mcp_server.tools.email_tools import send_email_notification
 from backend.memory.mem0_client import store_resolved_incident
-from backend.agents.llm_factory import get_llm
-
-llm = get_llm()
 
 SYSTEM_PROMPT = """You are an incident communications agent. Write a clear, professional
 incident notification email body. Include: what happened, severity, affected systems,
@@ -27,7 +26,7 @@ def run_notify(state: dict) -> dict:
         ),
     ]
 
-    response = llm.invoke(messages)
+    response = get_cached_llm().invoke(messages)
     email_body = response.content
 
     subject = f"[{state['severity']}] Incident RCA: {state['title']}"

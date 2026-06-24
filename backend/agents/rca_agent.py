@@ -1,12 +1,14 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from backend.mcp_server.tools.log_tools import (
-    query_system_logs,
-    get_system_metrics,
-    get_deployment_history,
-)
-from backend.agents.llm_factory import get_llm
+import json
+import re
 
-llm = get_llm()
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from backend.agents.llm_factory import get_cached_llm
+from backend.mcp_server.tools.log_tools import (
+    get_deployment_history,
+    get_system_metrics,
+    query_system_logs,
+)
 
 SYSTEM_PROMPT = """You are a senior SRE performing root cause analysis. You will be given:
 - Incident details and severity
@@ -42,9 +44,8 @@ def run_rca(state: dict) -> dict:
         ),
     ]
 
-    response = llm.invoke(messages)
+    response = get_cached_llm().invoke(messages)
 
-    import json, re
     raw = response.content
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     parsed = json.loads(match.group()) if match else {}

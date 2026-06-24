@@ -1,8 +1,10 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from backend.memory.mem0_client import search_similar_incidents
-from backend.agents.llm_factory import get_llm
+import json
+import re
 
-llm = get_llm()
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from backend.agents.llm_factory import get_cached_llm
+from backend.memory.mem0_client import search_similar_incidents
 
 SYSTEM_PROMPT = """You are an incident triage agent. Analyze the incident and:
 1. Assign severity: P1 (critical/outage), P2 (major degradation), P3 (minor), P4 (low)
@@ -34,9 +36,8 @@ def run_triage(state: dict) -> dict:
         ),
     ]
 
-    response = llm.invoke(messages)
+    response = get_cached_llm().invoke(messages)
 
-    import json, re
     raw = response.content
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     parsed = json.loads(match.group()) if match else {}
