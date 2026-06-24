@@ -5,6 +5,8 @@
 
 # Python
 .venv/
+venv/
+env/
 __pycache__/
 *.pyc
 *.pyo
@@ -12,13 +14,18 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Node
 node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.env
-package-lock.json
+# NOTE: lockfiles ARE committed for reproducible builds — do not ignore them.
 
 # Audit / runtime data
 backend/data/*.db
@@ -29,6 +36,11 @@ backend/data/*.db-wal
 .DS_Store
 Thumbs.db
 frontend/.env.local
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
 
 # Word temp lock files
 ~$*

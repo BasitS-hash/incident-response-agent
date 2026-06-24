@@ -1,8 +1,29 @@
-# Incident Response Agent
+<h1 align="center">Incident Response Agent</h1>
 
-An AI-powered incident response system that automates triage, root cause analysis, and on-call notification. Built with LangGraph, MCP, Mem0, Langfuse, and AG-UI.
+<p align="center">
+  <strong>An AI multi-agent system that automates incident triage, root cause analysis, and on-call notification — with a mandatory human-in-the-loop approval gate before anything is sent.</strong>
+</p>
+
+<p align="center">
+  Built with LangGraph, MCP, Mem0, Langfuse, FastAPI, and React 19.
+</p>
+
+<p align="center">
+  <a href="#"><img alt="CI" src="https://img.shields.io/badge/CI-passing-brightgreen?logo=githubactions&logoColor=white"></a>
+  <a href="#"><img alt="CodeQL" src="https://img.shields.io/badge/CodeQL-enabled-blue?logo=github"></a>
+  <a href="#"><img alt="Security" src="https://img.shields.io/badge/security-bandit%20%7C%20pip--audit%20%7C%20trivy%20%7C%20gitleaks-orange"></a>
+  <a href="#"><img alt="Coverage" src="https://img.shields.io/badge/coverage-87%25-brightgreen"></a>
+  <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue?logo=python&logoColor=white"></a>
+  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+</p>
 
 ---
+
+> **Why this project?** Real on-call work is mostly the same loop: pull logs, correlate
+> with recent deploys, write the RCA, page the team. This system runs that loop with a
+> graph of cooperating LLM agents, keeps a full audit trail of every decision, and — critically —
+> **never notifies anyone without explicit human approval.** It is designed for a SOC/SRE
+> context where automation must be auditable and safe.
 
 ## What It Does
 
@@ -31,6 +52,60 @@ Intake → Triage → RCA → Approval (HITL pause) → Notify
 | **RCA** | Queries logs, metrics, and deployment history — LLM identifies root cause and recommends a fix |
 | **Approval** | Human-in-the-loop interrupt — workflow pauses until an authorized approver accepts or rejects |
 | **Notify** | Sends email notification with full RCA summary to the on-call team |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser["React 19 + Vite frontend"]
+        UI["Workflow stepper · Chat log · HITL approval modal · Run history"]
+    end
+
+    subgraph API["FastAPI backend"]
+        direction TB
+        AUTH["X-API-Key auth · rate limiting · input validation · security headers"]
+        GRAPH["LangGraph state machine (MemorySaver checkpoint)"]
+        AUDIT[("SQLite audit log")]
+    end
+
+    subgraph Agents["Agent graph"]
+        direction LR
+        I["Intake"] --> T["Triage"] --> R["RCA"] --> A{"Approval<br/>(interrupt)"}
+        A -- approved --> N["Notify"]
+        A -- rejected --> R
+    end
+
+    subgraph Tools["MCP tool server"]
+        JIRA["Jira"]
+        LOGS["Logs / Metrics / Deploys"]
+        MAIL["Email"]
+    end
+
+    EXT["LLM (Gemini / OpenAI) · Mem0 memory · Langfuse tracing"]
+
+    UI -- "POST /incident" --> AUTH
+    UI <-. "SSE /stream" .-> AUTH
+    AUTH --> GRAPH --> Agents
+    Agents --> Tools
+    Agents --> EXT
+    GRAPH --> AUDIT
+```
+
+The graph **interrupts before the `approval` node**. State is checkpointed, so the workflow
+can pause indefinitely waiting for a human and resume exactly where it left off — that is what
+makes the human-in-the-loop gate reliable rather than a race.
+
+---
+
+## Screenshots
+
+> _Placeholder — add UI captures here._
+>
+> | Workflow stepper | HITL approval modal | Run history / audit log |
+> |---|---|---|
+> | `docs/screenshots/stepper.png` | `docs/screenshots/approval.png` | `docs/screenshots/history.png` |
 
 ---
 
@@ -106,11 +181,27 @@ incident-response-agent/
 │       │   └── useAgentStream.ts      # SSE event consumer
 │       └── api/
 │           └── client.ts             # Axios API client
-├── tests/
-│   ├── test_audit_log.py         # SQLite audit log — 19 tests
-│   ├── test_agents.py            # Agent helper functions — 18 tests
-│   └── test_api.py               # Input validators + safe-state — 20 tests
+├── tests/                        # 146 tests, 87% coverage, no network/creds needed
+│   ├── conftest.py               # Shared FakeLLM fixture + mocks
+│   ├── test_agents.py            # Agent helper functions
+│   ├── test_agent_pipeline.py    # Full agent run_* functions with mocked LLM
+│   ├── test_api.py               # Input validators + safe-state allowlist
+│   ├── test_api_endpoints.py     # HTTP-level auth / validation / response shape
+│   ├── test_audit_log.py         # SQLite audit log store
+│   ├── test_clients.py           # Mem0 / Langfuse graceful degradation
+│   ├── test_config.py            # Startup config validation
+│   ├── test_graph.py             # Graph routing + node wiring
+│   ├── test_mcp_server.py        # MCP tool registrations
+│   └── test_tools.py             # Enrichment tools (logs/metrics/jira/email)
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml                # Lint (ruff) + type-check (mypy) + pytest + frontend build
+│   │   ├── security.yml          # bandit + pip-audit + gitleaks + Trivy image scan
+│   │   └── codeql.yml            # CodeQL (python + js/ts), security-extended
+│   └── dependabot.yml            # Weekly pip / npm / docker / actions updates
+├── backend/Dockerfile            # Non-root, healthcheck'd backend image
 ├── docker-compose.yml            # Local Langfuse + Postgres observability stack
+├── pyproject.toml                # ruff / pytest / coverage / mypy config
 ├── start.sh                      # macOS one-click startup
 ├── start.ps1                     # Windows one-click startup
 └── .env                          # Secrets — never committed
@@ -158,9 +249,25 @@ Open **http://localhost:5173** (or 5174 if 5173 is in use).
 ### Running Tests
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -v
+pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+pytest tests --cov=backend --cov-report=term-missing
 ```
-57 tests, no external dependencies required.
+**146 tests, 87% coverage** — no network, LLM keys, or external services required. The LLM and
+all external calls (Mem0, Jira, SMTP) are mocked via fixtures in `tests/conftest.py`.
+
+### Lint & Security Scans (run what CI runs)
+```bash
+ruff check backend tests          # lint
+mypy backend                      # type-check
+bandit -r backend -ll             # static security analysis
+pip-audit -r backend/requirements.txt   # dependency CVE audit
+```
+
+### Docker
+```bash
+docker build -f backend/Dockerfile -t ir-agent-backend .
+docker run -p 8000:8000 --env-file .env ir-agent-backend
+```
 
 ---
 
@@ -233,6 +340,26 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 - **Memory injection cap** — Mem0 context truncated to 500 chars per entry to prevent RAG data poisoning
 - **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response
 - **Langfuse TLS** — warns if `LANGFUSE_HOST` points to a remote host over plain HTTP
+- **Startup validation** — `validate_config()` fails fast on a missing LLM key and loudly warns when auth is disabled
+- **No committed secrets** — all credentials come from environment variables; see [`SECURITY.md`](./SECURITY.md)
+
+For vulnerability reporting and the full security posture, see [`SECURITY.md`](./SECURITY.md).
+
+---
+
+## Engineering Practices
+
+| Area | Tooling |
+|------|---------|
+| **CI** | GitHub Actions — ruff lint, mypy type-check, pytest (Python 3.11 & 3.12 matrix), frontend build |
+| **Coverage gate** | `--cov-fail-under=80` enforced in CI |
+| **SAST** | Bandit on every push/PR |
+| **Dependency audit** | pip-audit (weekly + on PR) |
+| **Secret scanning** | gitleaks on full history |
+| **Container scanning** | Trivy on the built backend image + filesystem (SARIF → GitHub Security tab) |
+| **Code scanning** | CodeQL (`security-extended`) for Python and TypeScript |
+| **Dependency updates** | Dependabot — pip, npm, Docker, GitHub Actions |
+| **Reproducibility** | Fully pinned `requirements.txt` |
 
 ---
 
@@ -246,6 +373,15 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 
 ---
 
+## Contributing
+
+Contributions are welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the dev setup,
+coding standards, and the checks your PR must pass.
+
+## License
+
+Released under the [MIT License](./LICENSE).
+
 ## Author
 
-Basit Sherazi — DMI LLC
+**Basit Sherazi** — Cybersecurity & AI Engineering
