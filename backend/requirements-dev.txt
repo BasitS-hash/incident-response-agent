@@ -1,0 +1,13 @@
+# Development & CI dependencies. Install with:
+#   pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+-r requirements.txt
+
+# Testing
+pytest==9.1.1
+pytest-cov==7.1.0
+
+# Lint, type-check, security scanning
+ruff==0.15.19
+mypy==2.1.0
+bandit==1.9.4
+pip-audit==2.10.1

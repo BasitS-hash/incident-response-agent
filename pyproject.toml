@@ -1,0 +1,46 @@
+[project]
+name = "incident-response-agent"
+version = "0.1.0"
+description = "Multi-agent incident response automation with human-in-the-loop approval"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::ResourceWarning",
+]
+
+[tool.coverage.run]
+source = ["backend"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", "frontend", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "E402",  # module-level imports after code (config load order)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+exclude = ["frontend", ".venv", "build", "dist"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "frontend"]
