@@ -2,7 +2,7 @@
 # Verified against Python 3.11–3.14. Regenerate with `pip freeze` after upgrades.
 
 # Agent orchestration
-langgraph==1.2.6
+langgraph==1.2.7
 langgraph-checkpoint==4.1.1
 langchain-google-genai==4.2.5
 langchain-openai==1.3.3
