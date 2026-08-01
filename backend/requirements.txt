@@ -20,7 +20,7 @@ slowapi==0.1.10
 pydantic[email]==2.13.4
 
 # Tooling protocol
-mcp==1.28.0
+mcp==1.28.1
 
 # Utilities
 python-dotenv==1.2.2
