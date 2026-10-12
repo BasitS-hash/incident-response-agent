@@ -184,3 +184,75 @@ def test_get_run_decodes_affected_systems() -> None:
     r = audit_module.get_run(rid)
     assert r is not None
     assert r["affected_systems"] == ["payment-svc"]
+
+
+# ── input guard findings ──────────────────────────────────────────────────
+
+def test_record_run_started_stores_guard_findings() -> None:
+    """An approver has to be able to see that the text they read was changed
+    on the way in, so the guard's findings belong on the run row."""
+    rid = _run_id()
+    audit_module.record_run_started(rid, "INC-101", {
+        "severity": "P1",
+        "input_guard_findings": [
+            "description: neutralised 1 instruction-override phrase",
+            "description: removed 3 invisible or control characters",
+        ],
+    })
+    r = audit_module.get_run(rid)
+    assert r is not None
+    assert r["input_guard_findings"] == [
+        "description: neutralised 1 instruction-override phrase",
+        "description: removed 3 invisible or control characters",
+    ]
+
+
+def test_get_all_runs_decodes_guard_findings() -> None:
+    rid = _run_id()
+    audit_module.record_run_started(rid, "INC-205", {
+        "input_guard_findings": ["title: neutralised 1 role marker"],
+    })
+    runs = audit_module.get_all_runs()
+    assert runs[0]["input_guard_findings"] == ["title: neutralised 1 role marker"]
+
+
+def test_clean_run_records_an_empty_findings_list() -> None:
+    rid = _run_id()
+    audit_module.record_run_started(rid, "INC-312", {"severity": "P2"})
+    r = audit_module.get_run(rid)
+    assert r is not None
+    assert r["input_guard_findings"] == []
+
+
+def test_init_db_adds_the_column_to_a_pre_existing_table() -> None:
+    """``CREATE TABLE IF NOT EXISTS`` will not widen a table that already
+    exists, so a deployment with an older audit.db needs the explicit
+    migration — otherwise every insert fails and the audit trail goes quiet."""
+    import sqlite3
+
+    with sqlite3.connect(str(audit_module._DB_PATH)) as conn:
+        conn.execute("DROP TABLE runs")
+        # The schema as it stood before the input guard existed.
+        conn.execute(
+            "CREATE TABLE runs ("
+            "run_id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, "
+            "started_at TEXT NOT NULL, completed_at TEXT, "
+            "status TEXT NOT NULL DEFAULT 'running', severity TEXT, "
+            "affected_systems TEXT, triage_notes TEXT, root_cause TEXT, "
+            "rca_summary TEXT, recommended_fix TEXT, approved INTEGER, "
+            "approver TEXT, approval_notes TEXT, "
+            "email_sent INTEGER NOT NULL DEFAULT 0)"
+        )
+        conn.commit()
+
+    audit_module.init_db()
+
+    rid = _run_id()
+    audit_module.record_run_started(rid, "INC-101", {
+        "input_guard_findings": ["description: truncated to 4000 of 90000 characters"],
+    })
+    r = audit_module.get_run(rid)
+    assert r is not None
+    assert r["input_guard_findings"] == [
+        "description: truncated to 4000 of 90000 characters"
+    ]
