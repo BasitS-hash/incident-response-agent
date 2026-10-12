@@ -1,39 +1,66 @@
 version: 2
+
+# Grouping policy
+# ---------------
+# Every ecosystem groups its minor + patch updates into ONE pull request.
+# Ungrouped, a single monthly run opened ~16 PRs here. They were never all
+# reviewed, so a real fix got buried: the bump clearing PYSEC-2026-3483 sat
+# unmerged behind the noise while the Security workflow stayed red on main.
+#
+# Major bumps are deliberately left ungrouped — they carry breaking changes and
+# deserve an individual PR that can be evaluated (or closed) on its own.
 updates:
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: "monthly"
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels: ["dependencies", "python"]
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: "monthly"
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels: ["dependencies", "javascript"]
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: docker
     directory: /backend
     schedule:
       interval: "monthly"
       day: monday
+    open-pull-requests-limit: 2
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      docker-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: "monthly"
       day: monday
+    open-pull-requests-limit: 2
     labels: ["dependencies", "ci"]
     commit-message:
       prefix: "chore(ci)"
+    groups:
+      actions-all:
+        patterns: ["*"]
