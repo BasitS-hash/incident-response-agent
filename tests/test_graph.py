@@ -1,4 +1,6 @@
 """Tests for the LangGraph workflow wiring and routing logic."""
+from langgraph.checkpoint.memory import MemorySaver
+
 from backend.graph import nodes, state, workflow
 
 # ── routing functions (playbook control flow) ───────────────────────────────
@@ -49,7 +51,8 @@ class TestNodes:
 
 class TestCompiledGraph:
     def test_build_graph_interrupts_before_approval(self) -> None:
-        app = workflow.build_graph()
+        # Ephemeral checkpointer — keeps the test off the real on-disk DB
+        app = workflow.build_graph(MemorySaver())
         # The compiled app exists and exposes invoke/get_state used by the API
         assert hasattr(app, "invoke")
         assert hasattr(app, "get_state")

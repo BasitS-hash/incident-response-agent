@@ -12,7 +12,7 @@
   <a href="#"><img alt="CI" src="https://img.shields.io/badge/CI-passing-brightgreen?logo=githubactions&logoColor=white"></a>
   <a href="#"><img alt="CodeQL" src="https://img.shields.io/badge/CodeQL-enabled-blue?logo=github"></a>
   <a href="#"><img alt="Security" src="https://img.shields.io/badge/security-bandit%20%7C%20pip--audit%20%7C%20trivy%20%7C%20gitleaks-orange"></a>
-  <a href="#"><img alt="Coverage" src="https://img.shields.io/badge/coverage-87%25-brightgreen"></a>
+  <a href="#"><img alt="Coverage" src="https://img.shields.io/badge/coverage-88%25-brightgreen"></a>
   <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue?logo=python&logoColor=white"></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
@@ -66,7 +66,7 @@ flowchart LR
     subgraph API["FastAPI backend"]
         direction TB
         AUTH["X-API-Key auth · rate limiting · input validation · security headers"]
-        GRAPH["LangGraph state machine (MemorySaver checkpoint)"]
+        GRAPH["LangGraph state machine (SQLite checkpoint)"]
         AUDIT[("SQLite audit log")]
     end
 
@@ -93,9 +93,14 @@ flowchart LR
     GRAPH --> AUDIT
 ```
 
-The graph **interrupts before the `approval` node**. State is checkpointed, so the workflow
-can pause indefinitely waiting for a human and resume exactly where it left off — that is what
-makes the human-in-the-loop gate reliable rather than a race.
+The graph **interrupts before the `approval` node**. Checkpoints are written to SQLite on
+disk (`backend/data/checkpoints.db`, next to the audit DB), so a run parked at the gate
+survives an API restart: the process can be killed and redeployed and the pending approval
+is still there to resume. Resuming continues the paused run rather than starting a new one,
+so the triage and RCA produced before the pause are the ones the approver signed off on.
+
+`resume_after_approval()` refuses to resume a thread that is not actually sitting at the
+gate, so an unknown or already-resolved `run_id` cannot be used to fire a notification.
 
 ---
 
@@ -113,7 +118,7 @@ makes the human-in-the-loop gate reliable rather than a race.
 
 | Layer | Technology |
 |-------|-----------|
-| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — stateful multi-agent workflow with MemorySaver checkpointing for HITL persistence |
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) — stateful multi-agent workflow with on-disk SQLite checkpointing, so HITL pauses survive a process restart |
 | **LLM** | Google Gemini 2.5 Flash via `langchain-google-genai` (swap to OpenAI via `LLM_PROVIDER=openai`) |
 | **Tools** | [MCP](https://modelcontextprotocol.io/) — modular tool server (Jira, logs, metrics, email) |
 | **Memory** | [Mem0](https://mem0.ai/) — remembers past incidents and resolutions across runs |
@@ -153,9 +158,9 @@ incident-response-agent/
 │   │   └── main.py               # FastAPI routes + SSE streaming + rate limiting
 │   ├── audit/
 │   │   └── log.py                # SQLite audit log — persists every run
-│   ├── data/                     # Runtime SQLite DB (gitignored)
+│   ├── data/                     # Runtime SQLite DBs — audit.db + checkpoints.db (gitignored)
 │   ├── graph/
-│   │   ├── workflow.py           # LangGraph graph definition
+│   │   ├── workflow.py           # LangGraph graph definition + durable checkpointer
 │   │   ├── nodes.py              # Node wrappers + routing logic
 │   │   └── state.py              # IncidentState schema
 │   ├── mcp_server/
@@ -183,13 +188,14 @@ incident-response-agent/
 │       │   └── useAgentStream.ts      # SSE event consumer
 │       └── api/
 │           └── client.ts             # Axios API client
-├── tests/                        # 193 tests, 90% coverage, no network/creds needed
+├── tests/                        # 201 tests, 90% coverage, no network/creds needed
 │   ├── conftest.py               # Shared FakeLLM fixture + mocks
 │   ├── test_agents.py            # Agent helper functions
 │   ├── test_agent_pipeline.py    # Full agent run_* functions with mocked LLM
 │   ├── test_api.py               # Input validators + safe-state allowlist
 │   ├── test_api_endpoints.py     # HTTP-level auth / validation / response shape
 │   ├── test_audit_log.py         # SQLite audit log store
+│   ├── test_checkpointer.py      # Checkpoint durability across a restart + approval gate
 │   ├── test_clients.py           # Mem0 / Langfuse graceful degradation
 │   ├── test_config.py            # Startup config validation
 │   ├── test_graph.py             # Graph routing + node wiring
@@ -255,7 +261,7 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 pytest tests --cov=backend --cov-report=term-missing
 ```
-**193 tests, 90% coverage** — no network, LLM keys, or external services required. The LLM and
+**201 tests, 90% coverage** — no network, LLM keys, or external services required. The LLM and
 all external calls (Mem0, Jira, SMTP) are mocked via fixtures in `tests/conftest.py`.
 
 ### Lint & Security Scans (run what CI runs)
@@ -330,7 +336,7 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 | Jira mock | Jira REST API | Set `JIRA_URL`, `JIRA_EMAIL`, `JIRA_TOKEN` in `.env` |
 | Log mock | Splunk / Loki / Datadog | Replace `query_system_logs()` in `log_tools.py` |
 | Email mock | Gmail / SendGrid / SES | Set `SMTP_*` vars in `.env` |
-| SQLite checkpointer | PostgreSQL | Swap `MemorySaver` for `PostgresSaver` in `workflow.py` |
+| SQLite checkpointer | PostgreSQL | Swap `SqliteSaver` for `PostgresSaver` in `get_checkpointer()` (`workflow.py`) |
 
 ---
 

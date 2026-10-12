@@ -22,6 +22,7 @@ from backend.audit.log import (
 )
 from backend.config import API_KEY, validate_config
 from backend.graph.workflow import app as graph_app
+from backend.graph.workflow import resume_after_approval
 from backend.memory.mem0_client import search_similar_incidents
 from backend.observability.langfuse_client import flush, get_callback_handler
 
@@ -239,16 +240,17 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
 
     callbacks = [lf_handler] if lf_handler else []
     try:
-        graph_app.invoke(
+        resume_after_approval(
+            graph_app,
+            {**thread_config, "callbacks": callbacks},
             {
                 "approved":       req.approved,
                 "approver":       req.approver,
                 "approval_notes": req.notes,
             },
-            config={**thread_config, "callbacks": callbacks},
         )
     except Exception as e:
-        logger.warning("[approve] graph invoke error (non-fatal): %s", type(e).__name__)
+        logger.warning("[approve] graph resume error (non-fatal): %s", type(e).__name__)
 
     flush()
 
