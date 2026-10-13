@@ -29,6 +29,7 @@ The application is built defensively. Key controls:
 | **Prompt-injection hardening** | Mem0 memory injected into prompts is truncated (500 chars/entry) to limit RAG poisoning blast radius. Approval notes are sanitized before storage. |
 | **Output minimization** | A response allowlist (`_safe_state`) strips internal fields (LLM `messages`, `notification_recipients`, raw `similar_incidents`) so they never reach the browser. |
 | **Parameterized SQL** | The SQLite audit log uses parameterized queries exclusively — no string interpolation. |
+| **Audit tamper evidence** | Every audit write appends a hash-chained entry over a canonical snapshot of the run row. `python -m backend.audit.verify` (or `GET /audit/verify`) names the first entry that does not hold up. This is evidence, not immutability: it catches edits made without recomputing the chain, not a full rewrite of `audit.db` — see the audit-chain note in [`README.md`](./README.md#security). |
 | **No `eval` / shell** | No use of `eval`, `exec`, `os.system`, or `shell=True` anywhere in the codebase. |
 | **Security headers** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` on every response. |
 | **CORS** | Explicit localhost origin allowlist; no wildcard origin combined with credentials. |

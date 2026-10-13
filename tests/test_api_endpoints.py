@@ -164,3 +164,44 @@ class TestRuns:
         resp = client.get("/runs/r1", headers=HEADERS)
         assert resp.status_code == 200
         assert resp.json()["run_id"] == "r1"
+
+
+class TestAuditVerify:
+    """The endpoint is a convenience for the dashboard — the trustworthy check
+    is the CLI run against a copy of the file (see backend/audit/verify.py)."""
+
+    def test_verify_requires_key(self, client) -> None:
+        assert client.get("/audit/verify").status_code == 403
+
+    def test_verify_reports_a_clean_chain(self, client, monkeypatch) -> None:
+        from backend.audit.chain import ChainVerification
+
+        monkeypatch.setattr(
+            api_main, "verify_audit_chain",
+            lambda: ChainVerification(entries_checked=5, rows_checked=2),
+        )
+        resp = client.get("/audit/verify", headers=HEADERS)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["entries_checked"] == 5
+        assert body["problems"] == []
+
+    def test_verify_reports_the_first_broken_entry(self, client, monkeypatch) -> None:
+        from backend.audit.chain import ChainProblem, ChainVerification
+
+        problem = ChainProblem(
+            kind="digest_mismatch", seq=3, run_id="r1", detail="recomputed digest differs",
+        )
+        monkeypatch.setattr(
+            api_main, "verify_audit_chain",
+            lambda: ChainVerification(
+                entries_checked=3, rows_checked=0, problems=(problem,),
+            ),
+        )
+        resp = client.get("/audit/verify", headers=HEADERS)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is False
+        assert body["problems"][0]["seq"] == 3
+        assert body["problems"][0]["kind"] == "digest_mismatch"

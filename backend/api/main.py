@@ -3,6 +3,7 @@ import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,7 @@ from backend.audit.log import (
     init_db,
     record_run_completed,
     record_run_started,
+    verify_audit_chain,
 )
 from backend.config import API_KEY, validate_config
 from backend.graph.workflow import app as graph_app
@@ -289,6 +291,28 @@ async def get_run_detail(run_id: str):
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return run
+
+
+@api.get("/audit/verify", dependencies=[Security(verify_api_key)])
+async def verify_audit_log():
+    """Walk the audit log's hash chain and report the first entry that breaks.
+
+    This is the convenient check, not the authoritative one — it is answered by
+    the process that writes the log, so a compromised backend can answer "fine".
+    ``python -m backend.audit.verify --db <copy>`` is the check that does not
+    depend on this process being honest; see backend/audit/chain.py for what a
+    local chain does and does not establish.
+    """
+    result = verify_audit_chain()
+    return {
+        "ok":              result.ok,
+        "entries_checked": result.entries_checked,
+        "rows_checked":    result.rows_checked,
+        "adopted_runs":    result.adopted_runs,
+        "chain_broken_at": result.chain_broken_at,
+        "problems":        [asdict(p) for p in result.problems],
+        "summary":         result.report(),
+    }
 
 
 @api.get("/health")

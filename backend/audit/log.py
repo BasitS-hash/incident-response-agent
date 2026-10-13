@@ -4,6 +4,13 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from backend.audit.chain import (
+    ChainVerification,
+    append_entry,
+    ensure_chain,
+    verify_chain,
+)
+
 logger = logging.getLogger(__name__)
 
 _DB_PATH = Path(__file__).parent.parent / "data" / "audit.db"
@@ -15,9 +22,11 @@ _MIGRATIONS = {
 }
 
 
-def _get_conn() -> sqlite3.Connection:
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH))
+def _get_conn(db_path: Path | None = None) -> sqlite3.Connection:
+    """Open the audit DB, or another file — ``verify`` points this at a copy."""
+    path = db_path or _DB_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -47,6 +56,7 @@ def init_db() -> None:
                 )
             """)
             _apply_migrations(conn)
+            ensure_chain(conn)
             conn.commit()
     except Exception as exc:
         logger.warning("audit init_db failed: %s", exc)
@@ -71,6 +81,39 @@ def _json_list(value: str | None) -> list:
         return json.loads(value or "[]")
     except Exception:
         return []
+
+
+def _chain_row(conn: sqlite3.Connection, kind: str, run_id: str) -> None:
+    """Append a tamper-evidence entry for the row as it now stands.
+
+    The snapshot is the row read straight back out of SQLite rather than the
+    ``state`` dict that produced it: what the chain has to vouch for is what the
+    file says, and a digest over the intent would miss a write that landed
+    differently. Called before the commit, inside the write transaction — see
+    ``chain.append_entry`` for why the order matters.
+
+    Because it runs before the commit, a failure here rolls the row back with
+    it. That is the intended trade: a row that got written without a chain entry
+    would be reported as unchained by every verification from then on, and a
+    verifier that reports a permanent false alarm is one nobody reads.
+    """
+    row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    if row is None:
+        # An UPDATE against an unknown run_id changes nothing, so there is no
+        # row to vouch for and nothing to record.
+        return
+    append_entry(conn, kind=kind, run_id=run_id, payload=dict(row))
+
+
+def verify_audit_chain(db_path: Path | None = None) -> ChainVerification:
+    """Walk the audit log's hash chain and report the first entry that breaks.
+
+    Unlike the write paths in this module, this does not swallow errors. A
+    writer that gives up quietly loses one row; a verifier that reports "fine"
+    because it could not read the file is worse than having no verifier.
+    """
+    with _get_conn(db_path) as conn:
+        return verify_chain(conn)
 
 
 def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
@@ -104,6 +147,7 @@ def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
                     json.dumps(state.get("input_guard_findings") or []),
                 ),
             )
+            _chain_row(conn, "run_started", run_id)
             conn.commit()
     except Exception as exc:
         logger.warning("audit record_run_started failed: %s", exc)
@@ -145,6 +189,7 @@ def record_run_completed(run_id: str, state: dict) -> None:
                     run_id,
                 ),
             )
+            _chain_row(conn, "run_completed", run_id)
             conn.commit()
     except Exception as exc:
         logger.warning("audit record_run_completed failed: %s", exc)
