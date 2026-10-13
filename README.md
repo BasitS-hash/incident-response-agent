@@ -172,6 +172,8 @@ incident-response-agent/
 │   │   └── mem0_client.py        # Mem0 for cross-run incident memory
 │   ├── observability/
 │   │   └── langfuse_client.py    # Langfuse tracing
+│   ├── security/
+│   │   └── untrusted.py          # Wraps reporter-written text before it reaches a model
 │   ├── config.py                 # Env var loading
 │   └── requirements.txt
 ├── frontend/
@@ -186,7 +188,7 @@ incident-response-agent/
 │       │   └── useAgentStream.ts      # SSE event consumer
 │       └── api/
 │           └── client.ts             # Axios API client
-├── tests/                        # 154 tests, 88% coverage, no network/creds needed
+├── tests/                        # 201 tests, 90% coverage, no network/creds needed
 │   ├── conftest.py               # Shared FakeLLM fixture + mocks
 │   ├── test_agents.py            # Agent helper functions
 │   ├── test_agent_pipeline.py    # Full agent run_* functions with mocked LLM
@@ -198,7 +200,8 @@ incident-response-agent/
 │   ├── test_config.py            # Startup config validation
 │   ├── test_graph.py             # Graph routing + node wiring
 │   ├── test_mcp_server.py        # MCP tool registrations
-│   └── test_tools.py             # Enrichment tools (logs/metrics/jira/email)
+│   ├── test_tools.py             # Enrichment tools (logs/metrics/jira/email)
+│   └── test_untrusted.py         # Untrusted-input boundary (injection shapes, caps)
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml                # Lint (ruff) + type-check (mypy) + pytest + frontend build
@@ -258,7 +261,7 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 pytest tests --cov=backend --cov-report=term-missing
 ```
-**154 tests, 88% coverage** — no network, LLM keys, or external services required. The LLM and
+**201 tests, 90% coverage** — no network, LLM keys, or external services required. The LLM and
 all external calls (Mem0, Jira, SMTP) are mocked via fixtures in `tests/conftest.py`.
 
 ### Lint & Security Scans (run what CI runs)
@@ -342,12 +345,30 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 - **Auth** — POST endpoints and audit log protected by `X-API-Key` header; blank `API_KEY` enables dev mode
 - **Rate limiting** — 10 req/min on `POST /incident`, 20 req/min on `POST /approve`
 - **Input validation** — incident ID format enforced (`INC-NNNN`), approver name and notes sanitized against prompt injection (control chars stripped, max length enforced)
+- **Untrusted-input boundary** — every reporter-written field (title, description, reporter, and recalled Mem0 entries) is wrapped by `backend/security/untrusted.py` before it reaches a model: delimited with a per-call marker the content cannot close, instruction-override phrases / role turns / fence markers labelled in place, invisible and bidi characters removed, and a 4,000-char cap per field. Each agent's system prompt states the data/instruction split. What the guard changed is written to the run's audit row
 - **State allowlist** — internal fields (`notification_recipients`, `messages`, `similar_incidents`) are never sent to the browser
 - **Memory injection cap** — Mem0 context truncated to 500 chars per entry to prevent RAG data poisoning
 - **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response
 - **Langfuse TLS** — warns if `LANGFUSE_HOST` points to a remote host over plain HTTP
 - **Startup validation** — `validate_config()` fails fast on a missing LLM key and loudly warns when auth is disabled
 - **No committed secrets** — all credentials come from environment variables; see [`SECURITY.md`](./SECURITY.md)
+
+**On the input boundary, plainly:** wrapping raises the cost of prompt injection, it does not
+eliminate it. The patterns in `untrusted.py` are a short list of known shapes, not a classifier,
+and a model can still be steered by text that matches none of them. The structural defence here is
+the human-approval interrupt — nothing is sent until a person accepts it. The guard's job is
+narrower: keep the material that person reads from being quietly steered, and record it in the
+audit trail when incoming content had to be changed, so an approver can tell that what they read
+was sanitised. Nothing is silently discarded for the same reason — a control that drops the
+evidence hides the attack from the only reviewer who could catch it.
+
+Boundaries that are **not** guarded yet, named rather than left implied:
+
+| Gap | Why it is still open |
+|-----|----------------------|
+| Log, metric and deployment output in the RCA prompt | Currently mocked in `log_tools.py`. Real Splunk/Loki lines carry attacker-influenced strings (paths, user agents) and will need the same wrapper when those integrations land |
+| Email subject line | `notify_agent` builds it from the raw title, bypassing the LLM. Harmless against the mock logger; a real SMTP client needs newlines stripped first |
+| Approval modal | The findings are on the API response and the audit row, but the React modal does not render them yet, so today an approver has to read `GET /runs/{run_id}` to see them |
 
 For vulnerability reporting and the full security posture, see [`SECURITY.md`](./SECURITY.md).
 
@@ -376,6 +397,8 @@ For vulnerability reporting and the full security posture, see [`SECURITY.md`](.
 - [ ] SSO on the approval modal (restrict to authorized SREs)
 - [ ] Reject flow re-runs RCA with approver feedback
 - [ ] Real Jira, email, and log integrations (credentials pending)
+- [ ] Surface input-guard findings in the approval modal, not just `GET /runs/{run_id}`
+- [ ] Extend the untrusted-input wrapper to real log/metric tool output
 
 ---
 

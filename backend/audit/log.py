@@ -8,6 +8,12 @@ logger = logging.getLogger(__name__)
 
 _DB_PATH = Path(__file__).parent.parent / "data" / "audit.db"
 
+# Columns added after the table's first version, keyed by column name. Each
+# statement is a literal, applied only when that column is absent.
+_MIGRATIONS = {
+    "input_guard_findings": "ALTER TABLE runs ADD COLUMN input_guard_findings TEXT",
+}
+
 
 def _get_conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -36,12 +42,35 @@ def init_db() -> None:
                     approved            INTEGER,
                     approver            TEXT,
                     approval_notes      TEXT,
-                    email_sent          INTEGER NOT NULL DEFAULT 0
+                    email_sent          INTEGER NOT NULL DEFAULT 0,
+                    input_guard_findings TEXT
                 )
             """)
+            _apply_migrations(conn)
             conn.commit()
     except Exception as exc:
         logger.warning("audit init_db failed: %s", exc)
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Add columns that a table created by an earlier version is missing.
+
+    ``CREATE TABLE IF NOT EXISTS`` does not widen an existing table, so a
+    deployment carrying an older ``audit.db`` would fail every insert and the
+    audit trail would go quiet — which is the one failure this log cannot have.
+    """
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+    for column, statement in _MIGRATIONS.items():
+        if column not in existing:
+            conn.execute(statement)
+
+
+def _json_list(value: str | None) -> list:
+    """Decode a JSON-encoded list column, tolerating a NULL or a bad value."""
+    try:
+        return json.loads(value or "[]")
+    except Exception:
+        return []
 
 
 def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
@@ -56,8 +85,9 @@ def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
                 INSERT INTO runs (
                     run_id, incident_id, started_at, status,
                     severity, affected_systems, triage_notes,
-                    root_cause, rca_summary, recommended_fix, email_sent
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    root_cause, rca_summary, recommended_fix, email_sent,
+                    input_guard_findings
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -71,6 +101,7 @@ def record_run_started(run_id: str, incident_id: str, state: dict) -> None:
                     state.get("rca_summary"),
                     state.get("recommended_fix"),
                     1 if state.get("email_sent") else 0,
+                    json.dumps(state.get("input_guard_findings") or []),
                 ),
             )
             conn.commit()
@@ -130,11 +161,9 @@ def get_all_runs(limit: int = 100) -> list[dict]:
             result = []
             for row in rows:
                 r = dict(row)
-                # Decode JSON-encoded list back to Python list
-                try:
-                    r["affected_systems"] = json.loads(r.get("affected_systems") or "[]")
-                except Exception:
-                    r["affected_systems"] = []
+                # Decode JSON-encoded list columns back to Python lists
+                r["affected_systems"] = _json_list(r.get("affected_systems"))
+                r["input_guard_findings"] = _json_list(r.get("input_guard_findings"))
                 result.append(r)
             return result
     except Exception as exc:
@@ -152,10 +181,8 @@ def get_run(run_id: str) -> dict | None:
             if row is None:
                 return None
             r = dict(row)
-            try:
-                r["affected_systems"] = json.loads(r.get("affected_systems") or "[]")
-            except Exception:
-                r["affected_systems"] = []
+            r["affected_systems"] = _json_list(r.get("affected_systems"))
+            r["input_guard_findings"] = _json_list(r.get("input_guard_findings"))
             return r
     except Exception as exc:
         logger.warning("audit get_run failed: %s", exc)

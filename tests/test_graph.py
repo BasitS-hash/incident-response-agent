@@ -1,7 +1,7 @@
 """Tests for the LangGraph workflow wiring and routing logic."""
 from langgraph.checkpoint.memory import MemorySaver
 
-from backend.graph import nodes, workflow
+from backend.graph import nodes, state, workflow
 
 # ── routing functions (playbook control flow) ───────────────────────────────
 
@@ -56,3 +56,29 @@ class TestCompiledGraph:
         # The compiled app exists and exposes invoke/get_state used by the API
         assert hasattr(app, "invoke")
         assert hasattr(app, "get_state")
+
+
+# ── state reducers ──────────────────────────────────────────────────────────
+
+class TestMergeGuardFindings:
+    """Guard findings accumulate across nodes. RCA runs a second time when an
+    approval is rejected, and the same finding twice tells an approver nothing
+    new — so the reducer appends but does not repeat."""
+
+    def test_appends_new_findings(self) -> None:
+        merged = state.merge_guard_findings(["title: a"], ["description: b"])
+        assert merged == ["title: a", "description: b"]
+
+    def test_drops_repeats_while_keeping_order(self) -> None:
+        merged = state.merge_guard_findings(
+            ["title: a", "description: b"], ["description: b", "reporter: c"]
+        )
+        assert merged == ["title: a", "description: b", "reporter: c"]
+
+    def test_handles_missing_sides(self) -> None:
+        assert state.merge_guard_findings(None, ["x"]) == ["x"]
+        assert state.merge_guard_findings(["x"], None) == ["x"]
+        assert state.merge_guard_findings(None, None) == []
+
+    def test_accepts_a_bare_string_update(self) -> None:
+        assert state.merge_guard_findings([], "title: a") == ["title: a"]

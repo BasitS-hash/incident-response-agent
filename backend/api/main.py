@@ -91,6 +91,9 @@ _SAFE_STATE_KEYS = {
     "affected_systems", "triage_notes", "root_cause", "rca_summary",
     "log_evidence", "recommended_fix", "approved", "approver",
     "approval_notes", "email_sent",
+    # Not an internal detail: an approver should be able to see that the text
+    # the agents read was sanitised on the way in. See backend/security.
+    "input_guard_findings",
 }
 
 
@@ -162,6 +165,7 @@ async def start_incident(request: Request, req: IncidentRequest):
         "approver": None,
         "approval_notes": None,
         "email_sent": False,
+        "input_guard_findings": [],
         "notification_recipients": [str(r) for r in (req.recipients or [])],
         "messages": [],
     }
@@ -212,6 +216,7 @@ async def stream_incident(run_id: str):
                     "severity":        state.values.get("severity"),
                     "root_cause":      state.values.get("root_cause"),
                     "recommended_fix": state.values.get("recommended_fix"),
+                    "input_guard_findings": state.values.get("input_guard_findings", []),
                 })
 
             yield sse_event("RUN_FINISHED", {"run_id": run_id})

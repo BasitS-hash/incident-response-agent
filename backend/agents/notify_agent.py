@@ -4,17 +4,25 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.agents.llm_factory import get_cached_llm
 from backend.mcp_server.tools.email_tools import send_email_notification
 from backend.memory.mem0_client import store_resolved_incident
+from backend.security.untrusted import DATA_BOUNDARY_NOTE, wrap_untrusted
 
-SYSTEM_PROMPT = """You are an incident communications agent. Write a clear, professional
+SYSTEM_PROMPT = f"""You are an incident communications agent. Write a clear, professional
 incident notification email body. Include: what happened, severity, affected systems,
-root cause, recommended fix, and next steps. Keep it under 300 words."""
+root cause, recommended fix, and next steps. Keep it under 300 words.
+
+{DATA_BOUNDARY_NOTE}"""
 
 def run_notify(state: dict) -> dict:
+    # The title is still the reporter's own text. The RCA fields below were
+    # written by a model and read by the approver; the title was never rewritten
+    # by anyone, and it ends up in an email the on-call team acts on.
+    guarded_title = wrap_untrusted("title", state["title"])
+
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(
             content=(
-                f"Incident: {state['title']}\n"
+                f"{guarded_title.text}\n"
                 f"Severity: {state['severity']}\n"
                 f"Affected Systems: {', '.join(state.get('affected_systems', []))}\n"
                 f"Root Cause: {state['root_cause']}\n"

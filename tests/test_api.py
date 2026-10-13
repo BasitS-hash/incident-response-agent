@@ -112,7 +112,7 @@ class TestSafeState:
         "incident_id", "title", "severity", "description", "reporter",
         "affected_systems", "triage_notes", "root_cause", "rca_summary",
         "log_evidence", "recommended_fix", "approved", "approver",
-        "approval_notes", "email_sent",
+        "approval_notes", "email_sent", "input_guard_findings",
     ]
 
     def test_safe_keys_pass_through(self) -> None:
@@ -146,3 +146,16 @@ class TestSafeState:
 
     def test_empty_dict_returns_empty(self) -> None:
         assert _safe_state({}) == {}
+
+    def test_guard_findings_reach_the_approver(self) -> None:
+        """What the input guard changed is not an internal detail — it is part
+        of what the approver is being asked to sign off on."""
+        values = {
+            "input_guard_findings": [
+                "description: neutralised 1 instruction-override phrase"
+            ],
+        }
+        result = _safe_state(values)
+        assert result["input_guard_findings"] == [
+            "description: neutralised 1 instruction-override phrase"
+        ]
