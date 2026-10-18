@@ -4,8 +4,9 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Query, Request, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
@@ -22,11 +23,17 @@ from backend.audit.log import (
     record_run_started,
     verify_audit_chain,
 )
-from backend.config import API_KEY, validate_config
+from backend.config import API_KEY, API_PRINCIPALS, validate_config
 from backend.graph.workflow import app as graph_app
 from backend.graph.workflow import resume_after_approval
 from backend.memory.mem0_client import search_similar_incidents
 from backend.observability.langfuse_client import flush, get_callback_handler
+from backend.security.principals import (
+    SCOPE_APPROVE,
+    SCOPE_SUBMIT,
+    Principal,
+    resolve_principal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +80,48 @@ async def add_security_headers(request, call_next):
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(key: str = Security(_api_key_header)):
-    if not API_KEY:
-        return
-    if key != API_KEY:
+async def verify_api_key(key: str = Security(_api_key_header)) -> Principal:
+    """Resolve the presented key to the principal it names, or refuse.
+
+    The module globals are read on every call rather than captured, so tests
+    (and a future reload) see the configuration they set.
+    """
+    principal = resolve_principal(key, named=API_PRINCIPALS, shared_key=API_KEY)
+    if principal is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing API key.",
         )
+    return principal
+
+
+def require_scope(scope: str):
+    """Dependency: a valid key that also carries ``scope``.
+
+    Filing an incident and authorising the page that follows it are different
+    authorities, so they are different scopes. Read endpoints deliberately take
+    any valid key — the split is about who may act, not who may look.
+    """
+
+    async def _require(
+        principal: Annotated[Principal, Security(verify_api_key)],
+    ) -> Principal:
+        if not principal.can(scope):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"This API key is not authorised to {scope}. That scope "
+                    f"belongs to a named key in API_KEYS."
+                ),
+            )
+        return principal
+
+    return _require
+
+
+# ``/approve`` needs the principal itself, not just the check, so it takes it as
+# an annotated parameter; the submit gate only has to pass or fail.
+RequireApprove = Annotated[Principal, Depends(require_scope(SCOPE_APPROVE))]
 
 
 def sse_event(event_type: str, data: dict) -> str:
@@ -117,13 +158,24 @@ class IncidentRequest(BaseModel):
 
 
 class ApprovalRequest(BaseModel):
+    """An approval decision. The approver is *not* part of it.
+
+    ``approver`` stays on the model only so a client that still sends it is
+    cross-checked against the key it authenticated with instead of being
+    silently overridden — a UI that shows a name the log does not record is its
+    own kind of lie. The recorded identity comes from the credential; see
+    backend/security/principals.py.
+    """
+
     approved: bool
-    approver: str
+    approver: str | None = None
     notes: str | None = ""
 
     @field_validator("approver")
     @classmethod
-    def sanitize_approver(cls, v: str) -> str:
+    def sanitize_approver(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         v = v.strip()
         if len(v) > 100:
             raise ValueError("approver name too long (max 100 chars)")
@@ -143,7 +195,7 @@ class ApprovalRequest(BaseModel):
         return v
 
 
-@api.post("/incident", dependencies=[Security(verify_api_key)])
+@api.post("/incident", dependencies=[Depends(require_scope(SCOPE_SUBMIT))])
 @limiter.limit("10/minute")
 async def start_incident(request: Request, req: IncidentRequest):
     run_id = str(uuid.uuid4())
@@ -230,9 +282,29 @@ async def stream_incident(run_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@api.post("/approve/{run_id}", dependencies=[Security(verify_api_key)])
+@api.post("/approve/{run_id}")
 @limiter.limit("20/minute")
-async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
+async def approve_incident(
+    request: Request,
+    run_id: str,
+    req: ApprovalRequest,
+    principal: RequireApprove,
+):
+    # Who approved is the one field in this log that an attacker most wants to
+    # choose, and the hash chain will attest to whatever lands in it. So it is
+    # taken from the credential. A body that disagrees is refused before
+    # anything happens: the caller is trying to act as someone else, and
+    # ignoring it silently would leave their client reporting a name the audit
+    # row does not contain.
+    if req.approver is not None and req.approver.casefold() != principal.name.casefold():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "approver does not match the principal bound to this API key. "
+                "Omit it — the approver is derived from the credential."
+            ),
+        )
+
     thread_config = {"configurable": {"thread_id": run_id}}
 
     lf_handler = get_callback_handler(
@@ -247,7 +319,7 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
             {**thread_config, "callbacks": callbacks},
             {
                 "approved":       req.approved,
-                "approver":       req.approver,
+                "approver":       principal.name,
                 "approval_notes": req.notes,
             },
         )
@@ -269,6 +341,9 @@ async def approve_incident(request: Request, run_id: str, req: ApprovalRequest):
         "run_id":     run_id,
         "status":     "completed" if req.approved else "rejected",
         "email_sent": email_sent,
+        # The caller's own principal, so they can see what was recorded. No
+        # other principal and no key material goes out of here.
+        "approver":   principal.name,
     }
 
 

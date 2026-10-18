@@ -13,18 +13,16 @@ interface Props {
 export default function HITLApprovalModal({
   run_id, rca_summary, severity, root_cause, recommended_fix, onDone,
 }: Props) {
-  const [approver, setApprover] = useState("");
-  const [notes,    setNotes]    = useState("");
-  const [loading,  setLoading]  = useState(false);
+  const [notes,   setNotes]   = useState("");
+  const [loading, setLoading] = useState(false);
 
+  // No approver field: the backend records the principal bound to the API key
+  // this client authenticates with, and refuses a name sent in the body. A box
+  // asking for a name would just be a box the audit log ignores.
   async function handleDecision(approved: boolean) {
-    if (approved && !approver.trim()) {
-      alert("Please enter your name before approving.");
-      return;
-    }
     setLoading(true);
     try {
-      await submitApproval(run_id, { approved, approver, notes });
+      await submitApproval(run_id, { approved, notes });
       onDone();
     } catch {
       alert("Approval submission failed. Please try again.");
@@ -67,12 +65,11 @@ export default function HITLApprovalModal({
 
         {/* Footer inputs + buttons — fixed */}
         <div style={{ flexShrink: 0 }}>
-          <input
-            placeholder="Your name (approver)"
-            value={approver}
-            onChange={(e) => setApprover(e.target.value)}
-            style={inputStyle}
-          />
+          <p style={{
+            margin: "0 0 2px", fontSize: "11px", color: "#6b7280", lineHeight: 1.5,
+          }}>
+            Recorded against the principal bound to this client's API key.
+          </p>
           <textarea
             placeholder="Optional notes..."
             value={notes}

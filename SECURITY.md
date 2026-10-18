@@ -23,9 +23,10 @@ The application is built defensively. Key controls:
 
 | Area | Control |
 |------|---------|
-| **Authentication** | `X-API-Key` header required on all state-changing and audit endpoints. A blank `API_KEY` enables an explicit dev mode and is logged as a warning at startup. |
+| **Authentication** | `X-API-Key` header required on all state-changing and audit endpoints. `API_KEYS` maps each key to a named principal and a scope set (`submit` / `approve`). With neither `API_KEY` nor `API_KEYS` set, an explicit dev mode is enabled and logged as a warning at startup. |
+| **Approver identity** | `POST /approve` records the principal bound to the presented key, never an `approver` from the request body; a body that disagrees with its credential is refused, and the legacy unnamed `API_KEY` cannot approve. This is attribution to a key holder, not authentication of a person — a leaked key is an impersonation. See the "On who approved" note in [`README.md`](./README.md#security). |
 | **Rate limiting** | `slowapi` per-IP limits: 10/min on `POST /incident`, 20/min on `POST /approve`, 30/min on search. |
-| **Input validation** | Pydantic models validate every request body. Incident IDs must match `^[A-Z]+-\d+$`; approver names are length- and charset-restricted; notes have control characters stripped. |
+| **Input validation** | Pydantic models validate every request body. Incident IDs must match `^[A-Z]+-\d+$`; principal names configured in `API_KEYS` are length- and charset-restricted to the audit column's shape; notes have control characters stripped. |
 | **Prompt-injection hardening** | Mem0 memory injected into prompts is truncated (500 chars/entry) to limit RAG poisoning blast radius. Approval notes are sanitized before storage. |
 | **Output minimization** | A response allowlist (`_safe_state`) strips internal fields (LLM `messages`, `notification_recipients`, raw `similar_incidents`) so they never reach the browser. |
 | **Parameterized SQL** | The SQLite audit log uses parameterized queries exclusively — no string interpolation. |
@@ -43,8 +44,9 @@ The application is built defensively. Key controls:
 - The `docker-compose.yml` observability stack ships with **intentionally weak placeholder**
   values (`NEXTAUTH_SECRET`, `SALT`, `POSTGRES_PASSWORD`) clearly marked **local-dev-only**.
   Rotate these before any non-local deployment.
-- If you ever expose this service publicly, **set `API_KEY`** and rotate any credentials that
-  may have been logged.
+- If you ever expose this service publicly, **set `API_KEYS`** (long random keys, one principal
+  per key) and rotate any credentials that may have been logged. Key material is never written to
+  a log line or returned in a response, including in configuration-error messages.
 
 ## Automated Security Scanning
 

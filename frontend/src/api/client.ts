@@ -22,9 +22,11 @@ export interface IncidentStartResponse {
   state: Record<string, unknown>;
 }
 
+// No approver field. The backend derives it from the API key the request
+// authenticated with and rejects a body that disagrees, so sending one here
+// could only ever contradict what the audit log records.
 export interface ApprovalRequest {
   approved: boolean;
-  approver: string;
   notes?: string;
 }
 
@@ -32,6 +34,7 @@ export interface ApprovalResponse {
   run_id: string;
   status: string;
   email_sent: boolean;
+  approver: string;
 }
 
 export async function startIncident(
