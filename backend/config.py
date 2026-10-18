@@ -9,11 +9,18 @@ import os
 
 from dotenv import load_dotenv
 
+from backend.security.principals import parse_api_keys
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("API_KEY", "")
+# Named keys: ``principal:scopes:key`` entries. The approver written into the
+# audit row is derived from whichever of these authenticated the call, never
+# from the request body — see backend/security/principals.py.
+_API_KEYS = parse_api_keys(os.getenv("API_KEYS", ""))
+API_PRINCIPALS = _API_KEYS.principals
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -41,6 +48,15 @@ def validate_config() -> list[str]:
     """
     warnings: list[str] = []
 
+    if _API_KEYS.errors:
+        # Fail fast rather than start with a key configuration nobody can read.
+        # A deployment that thinks it revoked a key and did not is worse off
+        # than one that refuses to boot and says which entry is wrong.
+        raise RuntimeError(
+            "API_KEYS is malformed:\n  " + "\n  ".join(_API_KEYS.errors)
+        )
+    warnings.extend(_API_KEYS.warnings)
+
     if LLM_PROVIDER not in _SUPPORTED_PROVIDERS:
         raise RuntimeError(
             f"LLM_PROVIDER='{LLM_PROVIDER}' is not supported. "
@@ -58,10 +74,17 @@ def validate_config() -> list[str]:
             "Set it in your environment or .env file."
         )
 
-    if not API_KEY:
+    if not API_KEY and not API_PRINCIPALS:
         warnings.append(
-            "API_KEY is not set — endpoint authentication is DISABLED. "
-            "Set API_KEY before exposing this service beyond localhost."
+            "Neither API_KEY nor API_KEYS is set — endpoint authentication is "
+            "DISABLED. Approvals are recorded against a principal that says so "
+            "rather than against a person. Set API_KEYS before exposing this "
+            "service beyond localhost."
+        )
+    elif not API_PRINCIPALS:
+        warnings.append(
+            "API_KEY is set but API_KEYS is not — the shared key names nobody, "
+            "so POST /approve will be refused. Configure named keys to approve."
         )
 
     if bool(LANGFUSE_PUBLIC_KEY) != bool(LANGFUSE_SECRET_KEY):

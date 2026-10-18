@@ -196,11 +196,12 @@ incident-response-agent/
 │       │   └── useAgentStream.ts      # SSE event consumer
 │       └── api/
 │           └── client.ts             # Axios API client
-├── tests/                        # 250 tests, 92% coverage, no network/creds needed
+├── tests/                        # 303 tests, 93% coverage, no network/creds needed
 │   ├── conftest.py               # Shared FakeLLM fixture + mocks
 │   ├── test_agents.py            # Agent helper functions
 │   ├── test_agent_pipeline.py    # Full agent run_* functions with mocked LLM
 │   ├── test_api.py               # Input validators + safe-state allowlist
+│   ├── test_approval_identity.py # The recorded approver comes from the credential
 │   ├── test_api_endpoints.py     # HTTP-level auth / validation / response shape
 │   ├── test_audit_chain.py       # Tamper evidence — detection, canonicalisation, limits
 │   ├── test_audit_log.py         # SQLite audit log store
@@ -209,6 +210,7 @@ incident-response-agent/
 │   ├── test_config.py            # Startup config validation
 │   ├── test_graph.py             # Graph routing + node wiring
 │   ├── test_mcp_server.py        # MCP tool registrations
+│   ├── test_principals.py        # API key → principal parsing and resolution
 │   ├── test_tools.py             # Enrichment tools (logs/metrics/jira/email)
 │   └── test_untrusted.py         # Untrusted-input boundary (injection shapes, caps)
 ├── .github/
@@ -270,7 +272,7 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 pytest tests --cov=backend --cov-report=term-missing
 ```
-**250 tests, 92% coverage** — no network, LLM keys, or external services required. The LLM and
+**303 tests, 93% coverage** — no network, LLM keys, or external services required. The LLM and
 all external calls (Mem0, Jira, SMTP) are mocked via fixtures in `tests/conftest.py`.
 
 ### Verifying the Audit Log
@@ -307,7 +309,13 @@ GEMINI_API_KEY=your_gemini_key
 LLM_PROVIDER=gemini
 OPENAI_API_KEY=                    # required if LLM_PROVIDER=openai
 
-# API auth — leave blank to run in dev mode (no key required)
+# API auth — named keys: principal:scopes:key, comma- or newline-separated.
+# Scopes are submit, approve, or submit+approve. The approver recorded in the
+# audit log is derived from the key, so approving needs the approve scope.
+API_KEYS=alice@yourorg.com:submit+approve:long_random_key
+
+# Legacy single shared key. Still authenticates and may submit, but it names
+# nobody, so it cannot approve. Both blank = dev mode (no key required).
 API_KEY=
 
 # Jira (optional — mocked if not set)
@@ -334,9 +342,9 @@ LANGFUSE_HOST=http://localhost:3001   # local Docker instance
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/incident` | API key | Start a new incident workflow |
+| `POST` | `/incident` | API key (`submit`) | Start a new incident workflow |
 | `GET` | `/stream/{run_id}` | — | SSE stream of AG-UI events |
-| `POST` | `/approve/{run_id}` | API key | Submit approval / rejection |
+| `POST` | `/approve/{run_id}` | API key (`approve`) | Submit approval / rejection — the approver is derived from the key |
 | `GET` | `/runs` | API key | List all past runs (audit log) |
 | `GET` | `/runs/{run_id}` | API key | Full detail for a single run |
 | `GET` | `/incidents/search` | API key | Semantic search over Mem0 memory |
@@ -360,16 +368,17 @@ Everything is built with a clear swap point — the agent logic doesn't change, 
 
 ## Security
 
-- **Auth** — POST endpoints and audit log protected by `X-API-Key` header; blank `API_KEY` enables dev mode
+- **Auth** — POST endpoints and audit log protected by `X-API-Key` header; `API_KEYS` maps keys to named principals with `submit` / `approve` scopes; both key variables blank enables dev mode
+- **Approver bound to the credential** — `POST /approve` records the principal that the presented key maps to, not a name from the request body. A body `approver` that disagrees with the credential is refused rather than overridden, a key with only `submit` cannot approve, and the legacy unnamed `API_KEY` cannot approve at all. Key material never reaches a log line or a response
 - **Rate limiting** — 10 req/min on `POST /incident`, 20 req/min on `POST /approve`
-- **Input validation** — incident ID format enforced (`INC-NNNN`), approver name and notes sanitized against prompt injection (control chars stripped, max length enforced)
+- **Input validation** — incident ID format enforced (`INC-NNNN`), approval notes sanitized against prompt injection (control chars stripped, max length enforced); configured principal names are held to the audit column's charset so a config typo cannot put a newline in the log
 - **Untrusted-input boundary** — every reporter-written field (title, description, reporter, and recalled Mem0 entries) is wrapped by `backend/security/untrusted.py` before it reaches a model: delimited with a per-call marker the content cannot close, instruction-override phrases / role turns / fence markers labelled in place, invisible and bidi characters removed, and a 4,000-char cap per field. Each agent's system prompt states the data/instruction split. What the guard changed is written to the run's audit row
 - **Tamper-evident audit log** — every audit write appends an entry to `audit_chain`: a canonical snapshot of the run row, hashed together with its sequence number and the previous entry's digest. `GET /audit/verify` or `python -m backend.audit.verify` walks the chain and names the first entry that breaks, and also compares each live `runs` row against the snapshot the chain recorded for it — so an UPDATE that never touched `audit_chain` is caught too
 - **State allowlist** — internal fields (`notification_recipients`, `messages`, `similar_incidents`) are never sent to the browser
 - **Memory injection cap** — Mem0 context truncated to 500 chars per entry to prevent RAG data poisoning
 - **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response
 - **Langfuse TLS** — warns if `LANGFUSE_HOST` points to a remote host over plain HTTP
-- **Startup validation** — `validate_config()` fails fast on a missing LLM key and loudly warns when auth is disabled
+- **Startup validation** — `validate_config()` fails fast on a missing LLM key or a malformed `API_KEYS` entry (naming the entry's position, never its contents), and loudly warns when auth is disabled or when no key can approve
 - **No committed secrets** — all credentials come from environment variables; see [`SECURITY.md`](./SECURITY.md)
 
 **On the input boundary, plainly:** wrapping raises the cost of prompt injection, it does not
@@ -380,6 +389,24 @@ narrower: keep the material that person reads from being quietly steered, and re
 audit trail when incoming content had to be changed, so an approver can tell that what they read
 was sanitised. Nothing is silently discarded for the same reason — a control that drops the
 evidence hides the attack from the only reviewer who could catch it.
+
+**On who approved, plainly:** a static API key mapped to a name is *attribution to whoever
+holds that key*, not authentication of a human being. A leaked or shared key is an impersonation,
+and every control here — the scope check, the audit row, the hash chain — will faithfully attest
+to it. What binding the identity to the credential does buy is narrower and worth stating exactly:
+the name in the log is chosen by whoever configured the deployment rather than by the caller, a
+key can be scoped so a webhook that files incidents cannot authorise a page, and a key can be
+revoked. Real per-human identity needs SSO/OIDC with per-user tokens issued to people rather than
+to processes — that is the next step, not something this change delivers.
+
+Three cases needed deciding. A key that matches nothing is refused. The legacy single `API_KEY`
+still authenticates and may still submit, but it names nobody, so `POST /approve` refuses it
+rather than recording an approval with no identity attached — **an existing deployment that sets
+only `API_KEY` must configure `API_KEYS` before anyone can approve again**, and startup warns
+about exactly that. Dev mode (neither variable set) is the one case that is not a refusal: it is
+the documented local mode, refusing there would break the demo, so the approval is recorded
+against the principal `dev-mode-unauthenticated`, which says in the log what it is. In none of the
+three can the caller choose the name.
 
 **On the audit chain, plainly:** a local hash chain detects tampering by someone who edited the
 file and did not recompute the chain — a stray `UPDATE`, a bug in this application, a careless
@@ -409,6 +436,7 @@ Boundaries that are **not** guarded yet, named rather than left implied:
 | Log, metric and deployment output in the RCA prompt | Currently mocked in `log_tools.py`. Real Splunk/Loki lines carry attacker-influenced strings (paths, user agents) and will need the same wrapper when those integrations land |
 | Email subject line | `notify_agent` builds it from the raw title, bypassing the LLM. Harmless against the mock logger; a real SMTP client needs newlines stripped first |
 | Approval modal | The findings are on the API response and the audit row, but the React modal does not render them yet, so today an approver has to read `GET /runs/{run_id}` to see them |
+| `GET /stream/{run_id}` | Unauthenticated by design so the browser can follow a run without holding a key. Its state snapshot includes the run's `approver`, which is now a configured principal name — anyone who can reach the API and guess a `run_id` can read it |
 
 For vulnerability reporting and the full security posture, see [`SECURITY.md`](./SECURITY.md).
 
@@ -434,7 +462,7 @@ For vulnerability reporting and the full security posture, see [`SECURITY.md`](.
 
 - [ ] PagerDuty / Prometheus webhook trigger (zero-touch incident creation)
 - [ ] Slack / Teams notification channel
-- [ ] SSO on the approval modal (restrict to authorized SREs)
+- [ ] SSO / OIDC with per-user tokens, so the audit log records a person rather than a key holder
 - [ ] Reject flow re-runs RCA with approver feedback
 - [ ] Real Jira, email, and log integrations (credentials pending)
 - [ ] Surface input-guard findings in the approval modal, not just `GET /runs/{run_id}`
